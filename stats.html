@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prexpose – Stats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>(function(){var t=localStorage.getItem('primerTheme');if(t&&t!=='light')document.documentElement.classList.add(t)})()</script>
+</head>
+<body>
+  <div class="app">
+    <section class="status-bar">
+      <span class="stat">Stats</span>
+      <span class="bar-spacer"></span>
+      <a href="library.html" class="btn btn-text btn-back">&larr; Back</a>
+    </section>
+
+    <section class="kpi-row">
+      <div class="stat-tile">
+        <span class="stat-tile-label">Words known</span>
+        <span id="kpiKnown" class="stat-tile-value">0</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-label">Sessions</span>
+        <span id="kpiSessions" class="stat-tile-value">0</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-tile-label">Chars total</span>
+        <span id="kpiChars" class="stat-tile-value">0</span>
+      </div>
+    </section>
+
+    <section class="chart-card">
+      <div class="chart-head">
+        <h3>Words known over time</h3>
+        <div class="chart-filters" id="chartFilters">
+          <button type="button" data-range="" class="range-btn range-btn--active">All</button>
+          <button type="button" data-range="90" class="range-btn">90d</button>
+          <button type="button" data-range="30" class="range-btn">30d</button>
+        </div>
+      </div>
+      <div id="chart" class="chart"></div>
+      <div id="chartEmpty" class="chart-empty hidden">
+        <p>No known words yet — add some and come back.</p>
+      </div>
+      <div class="chart-table-wrap">
+        <table class="stats-table">
+          <thead>
+            <tr><th>Period</th><th>New words</th><th>Total known</th></tr>
+          </thead>
+          <tbody id="statsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="src/stats.js"></script>
+</body>
+</html>

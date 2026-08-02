@@ -1,7 +1,23 @@
-import { getSessionList, getSessionText, deleteSession, formatDate } from './state.js';
+import { getSessionList, getSessionText, deleteSession, getKnownWords, loadKnownWords } from './state.js';
+import { createVirtualList } from './virtual.js';
 
 const sessionList = document.getElementById('sessionList');
 const sessionEmpty = document.getElementById('sessionEmpty');
+
+function sessionCharCount(session) {
+  return session.charCount ?? (session.sentences ? session.sentences.join('').length : 0);
+}
+
+// Words added to the known list whose timestamp falls in this session's active
+// window: from the session's creation until the next (newer) session was saved.
+function knownAddedBetween(startMs, endMs) {
+  let n = 0;
+  for (const t of getKnownWords().values()) {
+    const ms = new Date(t).getTime();
+    if (ms >= startMs && ms < endMs) n++;
+  }
+  return n;
+}
 
 function formatRelTime(ts) {
   const diff = Date.now() - ts;
@@ -12,62 +28,68 @@ function formatRelTime(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-async function render() {
-  const sessions = await getSessionList();
-  sessionList.innerHTML = '';
+function renderRow(session) {
+  const item = document.createElement('div');
+  item.className = 'word-item';
 
-  if (!sessions.length) {
-    sessionList.classList.add('hidden');
-    sessionEmpty.classList.remove('hidden');
-    return;
-  }
-  sessionList.classList.remove('hidden');
-  sessionEmpty.classList.add('hidden');
+  const textSpan = document.createElement('span');
+  textSpan.className = 'word-text';
+  textSpan.textContent = `${sessionCharCount(session).toLocaleString()} chars · ${session.knownAdded} known`;
 
-  for (const session of sessions) {
-    const item = document.createElement('div');
-    item.className = 'word-item';
+  const dateSpan = document.createElement('span');
+  dateSpan.className = 'word-date';
+  dateSpan.textContent = formatRelTime(session.ts);
 
-    const textSpan = document.createElement('span');
-    textSpan.className = 'word-text';
-    const sentCount = session.sentences?.length || 0;
-    const wordCount = session.wordIndices ? Object.keys(session.wordIndices).length : 0;
-    textSpan.textContent = `${sentCount} sentences · ${wordCount} unique words`;
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'btn btn-text';
+  restoreBtn.textContent = 'Restore';
+  restoreBtn.addEventListener('click', async () => {
+    const text = await getSessionText(session.id);
+    if (text) {
+      sessionStorage.setItem('primerPasteText', text);
+      sessionStorage.setItem('primerAutoExtract', 'true');
+      window.location.href = 'index.html';
+    }
+  });
 
-    const dateSpan = document.createElement('span');
-    dateSpan.className = 'word-date';
-    dateSpan.textContent = formatRelTime(session.ts);
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn btn-text btn-text-danger';
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', async () => {
+    await deleteSession(session.id);
+    render();
+  });
 
-    const restoreBtn = document.createElement('button');
-    restoreBtn.className = 'btn btn-text';
-    restoreBtn.textContent = 'Restore';
-    restoreBtn.addEventListener('click', async () => {
-      const text = await getSessionText(session.id);
-      if (text) {
-        sessionStorage.setItem('primerPasteText', text);
-        sessionStorage.setItem('primerAutoExtract', 'true');
-        window.location.href = 'index.html';
-      }
-    });
+  const actions = document.createElement('div');
+  actions.className = 'word-actions';
+  actions.appendChild(dateSpan);
+  actions.appendChild(restoreBtn);
+  actions.appendChild(delBtn);
 
-    const delBtn = document.createElement('button');
-    delBtn.className = 'btn btn-text btn-text-danger';
-    delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', async () => {
-      await deleteSession(session.id);
-      render();
-    });
-
-    const actions = document.createElement('div');
-    actions.className = 'word-actions';
-    actions.appendChild(dateSpan);
-    actions.appendChild(restoreBtn);
-    actions.appendChild(delBtn);
-
-    item.appendChild(textSpan);
-    item.appendChild(actions);
-    sessionList.appendChild(item);
-  }
+  item.appendChild(textSpan);
+  item.appendChild(actions);
+  return item;
 }
 
+const sessionListVirtual = createVirtualList(sessionList, { renderRow });
+
+async function render() {
+  const sessions = await getSessionList(); // newest first
+  const now = Date.now();
+  const rows = sessions.map((s, i) => ({
+    ...s,
+    knownAdded: knownAddedBetween(s.ts, i === 0 ? now : sessions[i - 1].ts),
+  }));
+
+  if (!rows.length) {
+    sessionList.classList.add('hidden');
+    sessionEmpty.classList.remove('hidden');
+  } else {
+    sessionList.classList.remove('hidden');
+    sessionEmpty.classList.add('hidden');
+  }
+  sessionListVirtual.setItems(rows);
+}
+
+loadKnownWords();
 render();

@@ -9,6 +9,7 @@ import {
   saveSession, findSentences
 } from './state.js';
 import { getDictRank, getDictMap, getDictName } from './dict.js';
+import { createVirtualList } from './virtual.js';
 
 const PASTE_KEY = 'primerPasteText';
 
@@ -26,6 +27,16 @@ const wordList = document.getElementById('wordList');
 const emptyState = document.getElementById('emptyState');
 const restoreBtn = document.getElementById('restoreBtn');
 const hasSavedBadge = document.getElementById('hasSavedBadge');
+const newPct = document.getElementById('newPct');
+
+// --- Flagged words (click a row to mark for later). In-memory only: resets
+// on refresh, and a flagged word keeps its state while the virtualized rows
+// scroll out of view and back. ---
+const _flagged = new Set();
+function isFlagged(word) { return _flagged.has(word); }
+function toggleFlag(word) {
+  if (!_flagged.delete(word)) _flagged.add(word);
+}
 
 // Upload modal
 const uploadModal = document.getElementById('uploadModal');
@@ -41,6 +52,8 @@ const contextWordImage = document.getElementById('contextWordImage');
 const hideShortSentsCheckbox = document.getElementById('hideShortSentsCheckbox');
 const downloadModal = document.getElementById('downloadModal');
 
+const wordListVirtual = createVirtualList(wordList, { renderRow: renderWordRow });
+
 // --- Render helpers ---
 export function renderStats() {
   const el = document.getElementById('knownCount');
@@ -50,7 +63,7 @@ export function renderStats() {
 }
 
 export function updatePrimerUI() {
-  const hasWords = wordList.children.length > 0;
+  const hasWords = Number(wordList.dataset.vcount || 0) > 0;
   wordSection.classList.toggle('hidden', !hasWords);
   emptyState.classList.toggle('hidden', hasWords);
   const msg = emptyState.querySelector('p');
@@ -59,6 +72,21 @@ export function updatePrimerUI() {
   } else {
     msg.textContent = 'No new words to show. Paste some text above to get started.';
   }
+  updateNewPercent();
+}
+
+// Share of pasted occurrences not yet known, weighted by count. Respects the
+// hide-kana-only filter so "42% new" matches exactly what the list is showing.
+function updateNewPercent() {
+  if (!newPct) return;
+  const freq = getCurrentFreq();
+  let total = 0, known = 0;
+  for (const { word, count } of freq) {
+    if (getHideKanaOnly() && isKanaOnly(word)) continue;
+    total += count;
+    if (getKnownSet().has(word)) known += count;
+  }
+  newPct.textContent = total ? `${Math.round(((total - known) / total) * 100)}% new` : '';
 }
 
 export function renderDictUI() {
@@ -195,61 +223,67 @@ export function reprime() {
 }
 
 // --- Render word list ---
-function renderWordList(entries) {
-  wordList.innerHTML = '';
-  if (!entries.length) { wordSection.classList.add('hidden'); return; }
-  wordSection.classList.remove('hidden');
-  emptyState.classList.add('hidden');
-
+function renderWordRow({ word, count }) {
   const ks = getKnownSet();
-  for (const { word, count } of entries) {
-    const item = document.createElement('div');
-    item.className = 'word-item';
-    if (ks.has(word)) item.classList.add('word-item--added');
+  const item = document.createElement('div');
+  item.className = 'word-item';
+  if (ks.has(word)) item.classList.add('word-item--added');
+  if (isFlagged(word)) item.classList.add('word-item--flagged');
 
-    const label = document.createElement('span');
-    label.className = 'word-label';
-    const span = document.createElement('span');
-    span.className = 'word-text';
-    span.textContent = word;
-    label.appendChild(span);
-    if (count > 0) {
-      const b = document.createElement('span');
-      b.className = 'word-freq'; b.textContent = `×${count}`; label.appendChild(b);
-    }
-
-    const right = document.createElement('div');
-    right.className = 'word-right';
-    const rv = getDictRank(word);
-    if (rv != null) {
-      const r = document.createElement('span');
-      r.className = 'word-rank'; r.textContent = `#${rv}`; right.appendChild(r);
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'word-actions';
-
-    const addBtn = document.createElement('button');
-    if (ks.has(word)) { addBtn.className = 'btn btn-undo-text'; addBtn.textContent = 'Undo'; }
-    else { addBtn.className = 'btn btn-add'; addBtn.textContent = 'Add'; }
-    addBtn.addEventListener('click', () => {
-      if (getKnownSet().has(word)) { removeKnownWord(word); item.classList.remove('word-item--added'); addBtn.className = 'btn btn-add'; addBtn.textContent = 'Add'; }
-      else { addKnownWord(word); item.classList.add('word-item--added'); addBtn.className = 'btn btn-undo-text'; addBtn.textContent = 'Undo'; }
-      renderStats();
-    });
-
-    const moreBtn = document.createElement('button');
-    moreBtn.className = 'btn btn-text';
-    moreBtn.textContent = 'More';
-    moreBtn.addEventListener('click', () => openContextModal(word));
-
-    actions.appendChild(addBtn);
-    actions.appendChild(moreBtn);
-    right.appendChild(actions);
-    item.appendChild(label);
-    item.appendChild(right);
-    wordList.appendChild(item);
+  const label = document.createElement('span');
+  label.className = 'word-label';
+  const span = document.createElement('span');
+  span.className = 'word-text';
+  span.textContent = word;
+  label.appendChild(span);
+  if (count > 0) {
+    const b = document.createElement('span');
+    b.className = 'word-freq'; b.textContent = `×${count}`; label.appendChild(b);
   }
+
+  const right = document.createElement('div');
+  right.className = 'word-right';
+  const rv = getDictRank(word);
+  if (rv != null) {
+    const r = document.createElement('span');
+    r.className = 'word-rank'; r.textContent = `#${rv}`; right.appendChild(r);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'word-actions';
+
+  const addBtn = document.createElement('button');
+  if (ks.has(word)) { addBtn.className = 'btn btn-undo-text'; addBtn.textContent = 'Undo'; }
+  else { addBtn.className = 'btn btn-add'; addBtn.textContent = 'Add'; }
+  addBtn.addEventListener('click', () => {
+    if (getKnownSet().has(word)) { removeKnownWord(word); item.classList.remove('word-item--added'); addBtn.className = 'btn btn-add'; addBtn.textContent = 'Add'; }
+    else { addKnownWord(word); item.classList.add('word-item--added'); addBtn.className = 'btn btn-undo-text'; addBtn.textContent = 'Undo'; }
+    renderStats();
+    updateNewPercent();
+  });
+
+  const moreBtn = document.createElement('button');
+  moreBtn.className = 'btn btn-text';
+  moreBtn.textContent = 'More';
+  moreBtn.addEventListener('click', () => openContextModal(word));
+
+  actions.appendChild(addBtn);
+  actions.appendChild(moreBtn);
+  right.appendChild(actions);
+  item.appendChild(label);
+  item.appendChild(right);
+
+  item.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    toggleFlag(word);
+    item.classList.toggle('word-item--flagged');
+  });
+  return item;
+}
+
+function renderWordList(entries) {
+  wordListVirtual.setItems(entries);
+  updatePrimerUI();
 }
 
 // --- Context modal ---

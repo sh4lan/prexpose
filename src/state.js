@@ -93,13 +93,7 @@ export const CONTENT_POS = new Set([
 ]);
 
 // --- Theme ---
-export function getTheme() {
-  return localStorage.getItem('primerTheme') || 'light';
-}
-export function setTheme(theme) {
-  document.documentElement.classList.toggle('dark', theme === 'dark');
-  localStorage.setItem('primerTheme', theme);
-}
+export { getTheme, setTheme } from './theme.js';
 
 // --- Kuromoji XHR patch ---
 const _origOpen = XMLHttpRequest.prototype.open;
@@ -251,6 +245,7 @@ export async function saveSession(text, wordMap, varMap) {
   _currentSessionId = sessionId;
 
   const sents = splitSentences(text);
+  const charCount = sents.join('').length;
 
   const wordIndices = {};
   for (const word of wordMap.keys()) {
@@ -268,7 +263,7 @@ export async function saveSession(text, wordMap, varMap) {
     if (indices.length) wordIndices[word] = indices;
   }
 
-  const data = { sentences: sents, wordIndices, ts: now };
+  const data = { sentences: sents, wordIndices, ts: now, charCount, words: [...wordMap.keys()] };
   await dbPut('session:' + sessionId, data);
   // Keep a list of session IDs
   const list = await dbGet('sessionList') || [];

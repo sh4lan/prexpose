@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script>(function(){var t=localStorage.getItem('primerTheme');if(t==='dark')document.documentElement.classList.add('dark')})()</script>
+  <script>(function(){var t=localStorage.getItem('primerTheme');if(t&&t!=='light')document.documentElement.classList.add(t)})()</script>
 </head>
 <body>
   <div class="app">
@@ -18,7 +18,6 @@
       <span id="hasSavedBadge" class="stat hidden">· <span id="restoreBtn" class="clickable-stat">Restore last</span></span>
       <span class="bar-spacer"></span>
       <a href="library.html" class="btn btn-text">Manage</a>
-      <button id="themeBtn" class="btn btn-text theme-btn">Dark</button>
     </section>
 
     <section class="paste-section">
@@ -43,8 +42,7 @@
       <label class="control-item">
         <input type="checkbox" id="hideKanaCheckbox"> Hide kana-only
       </label>
-      <label class="control-item">
-      </label>
+      <span id="newPct" class="stat new-pct"></span>
     </section>
 
     <section id="wordSection" class="word-section hidden">
@@ -138,14 +136,6 @@
       </div>
     </div>
   </div>
-
-  <footer class="footer">
-    <span id="version"></span>
-    <span class="footer-sep">|</span>
-    <a href="https://github.com/sh4lan/pree" target="_blank" rel="noopener">GitHub</a>
-    <span class="footer-sep">|</span>
-    <a href="mailto:sh4lan@gmail.com">Mail</a>
-  </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>

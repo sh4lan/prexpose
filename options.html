@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prexpose – Options</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>(function(){var t=localStorage.getItem('primerTheme');if(t&&t!=='light')document.documentElement.classList.add(t)})()</script>
+</head>
+<body>
+  <div class="app">
+    <section class="status-bar">
+      <span class="stat">Options</span>
+      <span class="bar-spacer"></span>
+      <a href="library.html" class="btn btn-text btn-back">&larr; Back</a>
+    </section>
+
+    <section class="options-section">
+      <h3 class="options-title">Theme</h3>
+      <div id="themeOptions" class="theme-options"></div>
+    </section>
+
+    <section class="options-section">
+      <h3 class="options-title">Dictionary</h3>
+      <p class="stat options-hint">Load a Yomitan-compatible .zip frequency dictionary from your device.</p>
+      <div id="dictStatus" class="stat options-status"></div>
+      <div class="options-actions">
+        <button id="uploadDictBtn" class="btn btn-add">Upload Dictionary</button>
+        <button id="removeDictBtn" class="btn btn-text btn-text-danger hidden">Remove</button>
+      </div>
+      <input type="file" id="dictFileInput" accept=".zip" hidden>
+    </section>
+
+    <section class="options-section">
+      <h3 class="options-title">Data</h3>
+      <p class="stat options-hint">Import a word list (.txt, one word per line) or export your known words.</p>
+      <div class="options-actions">
+        <button id="importBtn" class="btn btn-secondary">Import Words</button>
+        <button id="exportBtn" class="btn btn-secondary">Export Words</button>
+      </div>
+      <input type="file" id="libraryFileInput" accept=".txt" hidden>
+    </section>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script type="module" src="src/options.js"></script>
+</body>
+</html>

@@ -8,14 +8,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <script>(function(){var t=localStorage.getItem('primerTheme');if(t==='dark')document.documentElement.classList.add('dark')})()</script>
+  <script>(function(){var t=localStorage.getItem('primerTheme');if(t&&t!=='light')document.documentElement.classList.add(t)})()</script>
 </head>
 <body>
   <div class="app">
     <section class="status-bar">
       <span class="stat">Sessions</span>
       <span class="bar-spacer"></span>
-      <a href="library.html" class="btn btn-text">&larr; Back</a>
+      <a href="library.html" class="btn btn-text btn-back">&larr; Back</a>
     </section>
 
     <div id="sessionList" class="word-list"></div>
