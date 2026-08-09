@@ -1,15 +1,17 @@
 import {
   getKnownWords, getKnownSet, getCurrentAllWords, getCurrentFreq, getOriginalText,
-  getHideKanaOnly, getNoSpoiler, setNoSpoiler, getHideShortSents, setHideShortSents,
-  setCurrentAllWords, setCurrentFreq, setOriginalText, setHideKanaOnly,
+  getHideHiragana, getHideKatakana, getNoSpoiler, setNoSpoiler,
+  getHideShortSents, setHideShortSents,
+  setCurrentAllWords, setCurrentFreq, setOriginalText, setHideHiragana, setHideKatakana,
   setSkipSessionSave, setVarMap,
   dbPut, dbGet, addKnownWord, removeKnownWord, getTokenizer,
-  CONTENT_POS, isKanaOnly, escapeHtml, downloadTextFile,
+  CONTENT_POS, isHiraganaOnly, isKatakanaOnly, escapeHtml, downloadTextFile,
   getWordImage, setWordImage, getWordImageFromDB,
   saveSession, findSentences
 } from './state.js';
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
+import { buildQuizData } from './quizdata.js';
 
 const PASTE_KEY = 'primerPasteText';
 
@@ -17,10 +19,12 @@ const PASTE_KEY = 'primerPasteText';
 const pasteTextarea = document.getElementById('pasteTextarea');
 const extractBtn = document.getElementById('extractBtn');
 const uploadBtn = document.getElementById('uploadBtn');
+const quizBtn = document.getElementById('quizBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const pasteStatus = document.getElementById('pasteStatus');
 const sortSelect = document.getElementById('sortSelect');
-const hideKanaCheckbox = document.getElementById('hideKanaCheckbox');
+const hideHiraganaCheckbox = document.getElementById('hideHiraganaCheckbox');
+const hideKatakanaCheckbox = document.getElementById('hideKatakanaCheckbox');
 const noSpoilerCheckbox = document.getElementById('noSpoilerCheckbox');
 const wordSection = document.getElementById('wordSection');
 const wordList = document.getElementById('wordList');
@@ -75,14 +79,18 @@ export function updatePrimerUI() {
   updateNewPercent();
 }
 
+function isFilteredOut(word) {
+  return (getHideHiragana() && isHiraganaOnly(word)) || (getHideKatakana() && isKatakanaOnly(word));
+}
+
 // Share of pasted occurrences not yet known, weighted by count. Respects the
-// hide-kana-only filter so "42% new" matches exactly what the list is showing.
+// kana filters so "42% new" matches exactly what the list is showing.
 function updateNewPercent() {
   if (!newPct) return;
   const freq = getCurrentFreq();
   let total = 0, known = 0;
   for (const { word, count } of freq) {
-    if (getHideKanaOnly() && isKanaOnly(word)) continue;
+    if (isFilteredOut(word)) continue;
     total += count;
     if (getKnownSet().has(word)) known += count;
   }
@@ -137,17 +145,38 @@ export async function extractFromPaste(text) {
       .sort((a, b) => b[1] - a[1])
       .map(([word, count]) => ({ word, count }));
 
-    if (!entries.length) { pasteStatus.textContent = 'No words could be extracted.'; return; }
+    if (!entries.length) {
+      pasteStatus.textContent = 'No words could be extracted.';
+      if (quizBtn) quizBtn.classList.add('hidden');
+      return;
+    }
 
     setCurrentAllWords(entries.map(e => e.word));
     setCurrentFreq(entries);
     setVarMap(varMap);
+
+    // Persist the extraction for the quiz page (separate page, no shared memory).
+    sessionStorage.setItem('primerQuizData', JSON.stringify({ words: entries.map(e => e.word), freq: entries, text }));
+
+    // Build the quiz cache in the background so quiz.html opens instantly.
+    // Idle yields control back to the UI while tokenizing.
+    buildQuizData({ text, freq: entries }).then(cache => {
+      try {
+        sessionStorage.setItem('primerQuizCache', JSON.stringify({
+          sentences: cache.sentences,
+          sentenceWords: cache.sentenceWords,
+          sentenceLen: cache.sentenceLen,
+          byWord: [...cache.byWord.entries()],
+        }));
+      } catch { /* storage full — quiz will build on open */ }
+    }).catch(() => {});
 
     // Save session for sentence lookup (all extracted words, not just new)
     saveSession(text, wordMap, varMap).catch(() => {});
 
     applyFilters();
     pasteStatus.textContent = `Extracted ${entries.length} unique words (${totalTokens} total).`;
+    if (quizBtn) quizBtn.classList.remove('hidden');
     downloadBtn.classList.remove('hidden');
 
     dbPut('lastText', text).catch(() => {});
@@ -184,7 +213,7 @@ function extractTextFromFile(file, text) {
 // --- Filter ---
 export function applyFilters(sortOverride) {
   let entries = getCurrentFreq().slice().filter(e => !getKnownSet().has(e.word));
-  if (getHideKanaOnly()) entries = entries.filter(e => !isKanaOnly(e.word));
+  if (getHideHiragana() || getHideKatakana()) entries = entries.filter(e => !isFilteredOut(e.word));
 
   const mode = sortOverride || sortSelect.value || 'count';
   if (mode === 'rank' && getDictMap()) {
@@ -369,7 +398,7 @@ export function openDownloadModal() { downloadModal.classList.remove('hidden'); 
 function closeDownloadModal() { downloadModal.classList.add('hidden'); }
 
 function getVisible() {
-  return getCurrentFreq().filter(e => !getKnownSet().has(e.word)).filter(e => getHideKanaOnly() ? !isKanaOnly(e.word) : true);
+  return getCurrentFreq().filter(e => !getKnownSet().has(e.word)).filter(e => !isFilteredOut(e.word));
 }
 function downloadWeighted() {
   const e = getVisible(); const l = [];
@@ -411,7 +440,8 @@ sortSelect.addEventListener('change', () => {
   applyFilters(sortSelect.value);
 });
 
-hideKanaCheckbox.addEventListener('change', () => { setHideKanaOnly(hideKanaCheckbox.checked); localStorage.setItem('primerHideKana', getHideKanaOnly()); if (getCurrentAllWords().length) applyFilters(); });
+hideHiraganaCheckbox.addEventListener('change', () => { setHideHiragana(hideHiraganaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
+hideKatakanaCheckbox.addEventListener('change', () => { setHideKatakana(hideKatakanaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
 if (noSpoilerCheckbox) {
   noSpoilerCheckbox.addEventListener('change', () => {
     setNoSpoiler(noSpoilerCheckbox.checked);
@@ -481,7 +511,8 @@ document.addEventListener('keydown', (e) => {
 
 // --- Init ---
 export function initPrimer() {
-  hideKanaCheckbox.checked = getHideKanaOnly();
+  hideHiraganaCheckbox.checked = getHideHiragana();
+  hideKatakanaCheckbox.checked = getHideKatakana();
   if (noSpoilerCheckbox) noSpoilerCheckbox.checked = getNoSpoiler();
   if (hideShortSentsCheckbox) hideShortSentsCheckbox.checked = getHideShortSents();
   updatePrimerUI();

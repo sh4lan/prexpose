@@ -51,7 +51,15 @@ let _currentAllWords = [];
 let _currentFreq = [];
 let _originalText = '';
 let _sortMode = 'count';
-let _hideKanaOnly = localStorage.getItem('primerHideKana') === 'true';
+let _hideHiragana = localStorage.getItem('primerHideHiragana') === 'true';
+let _hideKatakana = localStorage.getItem('primerHideKatakana') === 'true';
+// One-time migration from the old combined "hide kana-only" toggle.
+if (localStorage.getItem('primerHideKana') === 'true') {
+  _hideHiragana = _hideKatakana = true;
+  localStorage.setItem('primerHideHiragana', 'true');
+  localStorage.setItem('primerHideKatakana', 'true');
+}
+localStorage.removeItem('primerHideKana');
 let _noSpoiler = localStorage.getItem('primerNoSpoiler') === 'true';
 let _hideShortSents = localStorage.getItem('primerHideShortSents') !== 'false';
 let _currentSessionId = null;
@@ -68,13 +76,15 @@ export function getCurrentAllWords() { return _currentAllWords; }
 export function getCurrentFreq() { return _currentFreq; }
 export function getOriginalText() { return _originalText; }
 export function getSortMode() { return _sortMode; }
-export function getHideKanaOnly() { return _hideKanaOnly; }
+export function getHideHiragana() { return _hideHiragana; }
+export function getHideKatakana() { return _hideKatakana; }
 
 export function setCurrentAllWords(v) { _currentAllWords = v; }
 export function setCurrentFreq(v) { _currentFreq = v; }
 export function setOriginalText(v) { _originalText = v; }
 export function setSortMode(v) { _sortMode = v; }
-export function setHideKanaOnly(v) { _hideKanaOnly = v; }
+export function setHideHiragana(v) { _hideHiragana = v; localStorage.setItem('primerHideHiragana', v); }
+export function setHideKatakana(v) { _hideKatakana = v; localStorage.setItem('primerHideKatakana', v); }
 export function getNoSpoiler() { return _noSpoiler; }
 export function setNoSpoiler(v) { _noSpoiler = v; localStorage.setItem('primerNoSpoiler', v); }
 export function getCurrentSessionId() { return _currentSessionId; }
@@ -184,12 +194,17 @@ export async function getTokenizer() {
 }
 
 // --- Utilities ---
-export function isKanaOnly(word) {
+export function isHiraganaOnly(word) {
   return [...word].every(ch => {
     const cp = ch.codePointAt(0);
-    return (cp >= 0x3040 && cp <= 0x309F) ||
-           (cp >= 0x30A0 && cp <= 0x30FF) ||
-           cp === 0x30FC;
+    return cp >= 0x3040 && cp <= 0x309F;
+  });
+}
+
+export function isKatakanaOnly(word) {
+  return [...word].every(ch => {
+    const cp = ch.codePointAt(0);
+    return cp >= 0x30A0 && cp <= 0x30FF;
   });
 }
 
@@ -235,7 +250,7 @@ export async function getWordImageFromDB(word) {
 
 // --- Session sentence storage ---
 export function splitSentences(text) {
-  return text.split(/。|！|？|\.\s|\!\s|\?\s|\n/).map(s => s.trim()).filter(s => s.length > 0);
+  return text.split(/。|！|？|\.\s|\!\s|\?\s|\n/).map(s => s.trim()).filter(s => s.length > 0).map(s => s.replace(/[…。\.]+$/, ''));
 }
 
 export async function saveSession(text, wordMap, varMap) {

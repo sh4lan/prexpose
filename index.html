@@ -25,6 +25,7 @@
       <div class="paste-buttons">
         <button id="extractBtn" class="btn btn-add">Extract Words</button>
         <button id="uploadBtn" class="btn btn-secondary">Upload</button>
+        <a id="quizBtn" href="quiz.html" class="btn btn-secondary hidden">Quiz</a>
         <button id="downloadBtn" class="btn btn-secondary hidden">Download</button>
         <span id="pasteStatus" class="stat" style="margin-left:0.5rem"></span>
       </div>
@@ -40,7 +41,10 @@
         </select>
       </label>
       <label class="control-item">
-        <input type="checkbox" id="hideKanaCheckbox"> Hide kana-only
+        <input type="checkbox" id="hideHiraganaCheckbox"> Hide hiragana
+      </label>
+      <label class="control-item">
+        <input type="checkbox" id="hideKatakanaCheckbox"> Hide katakana
       </label>
       <span id="newPct" class="stat new-pct"></span>
     </section>
@@ -139,6 +143,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+  <div id="quizBuildHarness" hidden></div>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>
