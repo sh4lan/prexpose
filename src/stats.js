@@ -248,6 +248,9 @@ function renderTable(days, totals) {
     if (cur) rows.push({ label: fmtMonth(cur), added, total: totals[days.length - 1] });
   }
 
+  // Newest period first
+  rows.reverse();
+
   const frag = document.createDocumentFragment();
   for (const r of rows) {
     const tr = document.createElement('tr');

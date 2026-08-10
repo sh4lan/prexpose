@@ -60,14 +60,10 @@ if (localStorage.getItem('primerHideKana') === 'true') {
   localStorage.setItem('primerHideKatakana', 'true');
 }
 localStorage.removeItem('primerHideKana');
-let _noSpoiler = localStorage.getItem('primerNoSpoiler') === 'true';
-let _hideShortSents = localStorage.getItem('primerHideShortSents') !== 'false';
-let _currentSessionId = null;
 let _skipSessionSave = false;
 let _tokenizer = null;
 let _tokenizerLoading = false;
 
-let _wordImages = new Map(); // word -> url string
 let _varMap = new Map(); // canonical word -> Set of surface forms (for current text matching)
 
 export function getKnownWords() { return _knownWords; }
@@ -85,13 +81,6 @@ export function setOriginalText(v) { _originalText = v; }
 export function setSortMode(v) { _sortMode = v; }
 export function setHideHiragana(v) { _hideHiragana = v; localStorage.setItem('primerHideHiragana', v); }
 export function setHideKatakana(v) { _hideKatakana = v; localStorage.setItem('primerHideKatakana', v); }
-export function getNoSpoiler() { return _noSpoiler; }
-export function setNoSpoiler(v) { _noSpoiler = v; localStorage.setItem('primerNoSpoiler', v); }
-export function getCurrentSessionId() { return _currentSessionId; }
-export function setCurrentSessionId(v) { _currentSessionId = v; }
-export function getHideShortSents() { return _hideShortSents; }
-export function setHideShortSents(v) { _hideShortSents = v; localStorage.setItem('primerHideShortSents', v); }
-export function isShortSentence(s) { return [...s].length <= 3; }
 export function getVarMap() { return _varMap; }
 export function setVarMap(v) { _varMap = v; }
 export function getSkipSessionSave() { return _skipSessionSave; }
@@ -208,6 +197,15 @@ export function isKatakanaOnly(word) {
   });
 }
 
+// Pure kana (hiragana, katakana, or the long-vowel mark ー), no kanji.
+// Used to drop mixed-kana words like よーし when BOTH kana filters are on.
+export function isKanaOnly(word) {
+  return [...word].every(ch => {
+    const cp = ch.codePointAt(0);
+    return (cp >= 0x3040 && cp <= 0x309F) || (cp >= 0x30A0 && cp <= 0x30FF);
+  });
+}
+
 export function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -233,21 +231,6 @@ export function formatDate(date) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-// --- Word image URLs ---
-export function getWordImage(word) { return _wordImages.get(word) || ''; }
-export function setWordImage(word, url) {
-  if (url) _wordImages.set(word, url);
-  else _wordImages.delete(word);
-  dbPut('img:' + word, url || '').catch(() => {});
-}
-export async function getWordImageFromDB(word) {
-  try {
-    const url = await dbGet('img:' + word);
-    if (url) { _wordImages.set(word, url); return url; }
-  } catch {}
-  return '';
-}
-
 // --- Session sentence storage ---
 export function splitSentences(text) {
   return text.split(/。|！|？|\.\s|\!\s|\?\s|\n/).map(s => s.trim()).filter(s => s.length > 0).map(s => s.replace(/[…。\.]+$/, ''));
@@ -257,7 +240,6 @@ export async function saveSession(text, wordMap, varMap) {
   if (_skipSessionSave) { _skipSessionSave = false; return null; }
   const now = Date.now();
   const sessionId = now.toString(36) + Math.random().toString(36).slice(2, 4);
-  _currentSessionId = sessionId;
 
   const sents = splitSentences(text);
   const charCount = sents.join('').length;
@@ -294,27 +276,24 @@ export async function findSentences(word) {
   for (const sid of list) {
     const data = await dbGet('session:' + sid);
     if (!data) continue;
-    if (_noSpoiler && sid === _currentSessionId) continue;
     const indices = data.wordIndices[word];
     if (!indices) continue;
     for (const idx of indices) {
       if (idx >= data.sentences.length) continue;
       const text = data.sentences[idx];
-      if (_hideShortSents && isShortSentence(text)) continue;
       const existing = results.get(text);
       if (!existing || data.ts > existing.ts) results.set(text, { text, ts: data.ts });
     }
   }
 
   // Also add from current text in memory
-  if (_originalText && !(_noSpoiler && _currentSessionId)) {
+  if (_originalText) {
     const now = Date.now();
     const currentSents = splitSentences(_originalText);
     const forms = [word];
     const vm = _varMap;
     if (vm && vm.has(word)) for (const sf of vm.get(word)) forms.push(sf);
     for (const s of currentSents) {
-      if (_hideShortSents && isShortSentence(s)) continue;
       let matched = false;
       for (const f of forms) { if (s.includes(f)) { matched = true; break; } }
       if (!matched) continue;
@@ -324,6 +303,25 @@ export async function findSentences(word) {
   }
 
   return [...results.values()].sort((a, b) => b.ts - a.ts);
+}
+
+// Locate a sentence in its source (current text first, then saved sessions)
+// so the word-context view can show the surrounding sentences with it
+// highlighted. Returns { sentences, index, ts } or null.
+export async function findSentenceContext(sentenceText) {
+  if (_originalText) {
+    const sents = splitSentences(_originalText);
+    const i = sents.findIndex(s => s === sentenceText);
+    if (i !== -1) return { sentences: sents, index: i, ts: Date.now(), current: true };
+  }
+  const list = await dbGet('sessionList') || [];
+  for (const sid of list) {
+    const data = await dbGet('session:' + sid);
+    if (!data || !Array.isArray(data.sentences)) continue;
+    const i = data.sentences.findIndex(s => s === sentenceText);
+    if (i !== -1) return { sentences: data.sentences, index: i, ts: data.ts };
+  }
+  return null;
 }
 
 export async function getSessionList() {

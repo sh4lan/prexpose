@@ -80,28 +80,63 @@
     <!-- Word Context Modal -->
     <div id="contextModal" class="modal hidden">
       <div class="modal-backdrop"></div>
-      <div class="modal-content modal-content-wide">
+      <div class="modal-content modal-content-context">
         <div class="modal-header">
           <h2 id="contextWordTitle"></h2>
           <span id="contextWordOcc" class="stat" style="margin-left:0.4rem;"></span>
           <span class="bar-spacer"></span>
           <span id="contextWordRank" class="stat"></span>
+          <button id="moreFiltersBtn" class="btn btn-text">Filters</button>
           <button class="modal-close btn btn-text">&times;</button>
         </div>
-        <div class="context-layout">
-          <div class="context-image-col">
-            <div class="context-image-checkboxes">
-              <label class="control-item" style="font-size:0.8rem;">
-                <input type="checkbox" id="noSpoilerCheckbox"> No spoiler
-              </label>
-              <label class="control-item" style="font-size:0.8rem;">
-                <input type="checkbox" id="hideShortSentsCheckbox"> Hide short
-              </label>
-            </div>
-            <img id="contextWordImage" class="context-image hidden" alt="">
-            <input type="text" id="contextImageUrl" class="modal-image-input" placeholder="Image URL...">
+        <div id="contextSentences" class="modal-body"></div>
+        <div id="moreContextPanel" class="modal-body hidden">
+          <div class="context-subhead">
+            <button id="moreContextBack" class="btn btn-text">&larr; Back</button>
+            <span class="bar-spacer"></span>
+            <span id="moreContextInfo" class="stat"></span>
           </div>
-          <div id="contextSentences" class="modal-body"></div>
+          <div id="moreContextLines" class="quiz-context-panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Word-context filters drawer -->
+    <div id="moreFiltersPanel" class="quiz-filters-panel hidden">
+      <div class="quiz-filters-backdrop"></div>
+      <div class="quiz-filters-drawer">
+        <div class="quiz-filters-head">
+          <span class="quiz-filters-title">Filters</span>
+          <span class="bar-spacer"></span>
+          <button class="btn btn-text quiz-filters-close" aria-label="Close filters">&times;</button>
+        </div>
+        <div class="quiz-filters-body">
+          <div class="quiz-filter-block">
+            <div class="quiz-filter-label">New words per sentence <span class="quiz-filter-val" id="moreValNew"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="moreFillNew"></div></div>
+              <input type="range" id="moreRngMaxNew" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+          <div class="quiz-filter-block">
+            <div class="quiz-filter-label">Sentence length <span class="quiz-filter-val" id="moreValLen"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="moreFillLen"></div></div>
+              <input type="range" id="moreRngMinLen" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="moreRngMaxLen" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+          <div class="quiz-filter-block">
+            <div class="quiz-filter-label">Date added <span class="quiz-filter-val" id="moreValDate"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="moreFillDate"></div></div>
+              <input type="range" id="moreRngMinDate" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="moreRngMaxDate" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="quiz-filters-foot">
+          <button id="moreFiltersReset" class="btn btn-text">Reset</button>
         </div>
       </div>
     </div>

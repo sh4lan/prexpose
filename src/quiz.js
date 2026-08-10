@@ -6,6 +6,7 @@ import {
 } from './state.js';
 import { getDictRank, getDictMap, loadDictFromDB } from './dict.js';
 import { buildQuizData } from './quizdata.js';
+import { setRange, pct, fillDual, fillSingle, labelSingle, labelPair } from './ranges.js';
 
 const FILTER_KEY = 'primerQuizFilters';
 
@@ -123,38 +124,7 @@ function buildPool() {
   }
 }
 
-// --- Filter sliders ---
-function setRange(input, min, max, value) {
-  input.min = min;
-  input.max = max;
-  input.value = value;
-}
-
-function pct(v, lo, hi) {
-  return hi === lo ? 0 : ((v - lo) / (hi - lo)) * 100;
-}
-
-function fillDual(minEl, maxEl, fillEl) {
-  const lo = Number(minEl.min), hi = Number(maxEl.max);
-  fillEl.style.left = pct(Number(minEl.value), lo, hi) + '%';
-  fillEl.style.right = (100 - pct(Number(maxEl.value), lo, hi)) + '%';
-}
-
-function fillSingle(el, fillEl) {
-  const lo = Number(el.min), hi = Number(el.max);
-  fillEl.style.left = '0%';
-  fillEl.style.right = (100 - pct(Number(el.value), lo, hi)) + '%';
-}
-
-function labelSingle(el) {
-  return Number(el.value) >= Number(el.max) ? 'any' : String(el.value);
-}
-
-function labelPair(minEl, maxEl) {
-  if (Number(minEl.value) <= Number(minEl.min) && Number(maxEl.value) >= Number(maxEl.max)) return 'any';
-  return `${minEl.value} — ${maxEl.value}`;
-}
-
+// --- Filter sliders (helpers live in ranges.js) ---
 function updateLabels() {
   valMaxNew.textContent = labelSingle(fMaxNew);
   valLen.textContent = labelPair(fMinLen, fMaxLen);

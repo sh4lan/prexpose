@@ -1,17 +1,16 @@
 import {
-  getKnownWords, getKnownSet, getCurrentAllWords, getCurrentFreq, getOriginalText,
-  getHideHiragana, getHideKatakana, getNoSpoiler, setNoSpoiler,
-  getHideShortSents, setHideShortSents,
+  getKnownWords, getKnownSet, getCurrentAllWords, getCurrentFreq,
+  getHideHiragana, getHideKatakana,
   setCurrentAllWords, setCurrentFreq, setOriginalText, setHideHiragana, setHideKatakana,
   setSkipSessionSave, setVarMap,
   dbPut, dbGet, addKnownWord, removeKnownWord, getTokenizer,
-  CONTENT_POS, isHiraganaOnly, isKatakanaOnly, escapeHtml, downloadTextFile,
-  getWordImage, setWordImage, getWordImageFromDB,
-  saveSession, findSentences
+  CONTENT_POS, isHiraganaOnly, isKatakanaOnly, isKanaOnly, downloadTextFile,
+  saveSession, findSentences, findSentenceContext
 } from './state.js';
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
 import { buildQuizData } from './quizdata.js';
+import { setRange, fillDual, fillSingle, labelSingle, labelPair } from './ranges.js';
 
 const PASTE_KEY = 'primerPasteText';
 
@@ -25,7 +24,6 @@ const pasteStatus = document.getElementById('pasteStatus');
 const sortSelect = document.getElementById('sortSelect');
 const hideHiraganaCheckbox = document.getElementById('hideHiraganaCheckbox');
 const hideKatakanaCheckbox = document.getElementById('hideKatakanaCheckbox');
-const noSpoilerCheckbox = document.getElementById('noSpoilerCheckbox');
 const wordSection = document.getElementById('wordSection');
 const wordList = document.getElementById('wordList');
 const emptyState = document.getElementById('emptyState');
@@ -51,10 +49,28 @@ const uploadModalStatus = document.getElementById('uploadModalStatus');
 const contextModal = document.getElementById('contextModal');
 const contextWordTitle = document.getElementById('contextWordTitle');
 const contextSentences = document.getElementById('contextSentences');
-const contextImageUrl = document.getElementById('contextImageUrl');
-const contextWordImage = document.getElementById('contextWordImage');
-const hideShortSentsCheckbox = document.getElementById('hideShortSentsCheckbox');
+const contextWordOcc = document.getElementById('contextWordOcc');
+const contextWordRank = document.getElementById('contextWordRank');
 const downloadModal = document.getElementById('downloadModal');
+
+// Word-context (More) filters + context sub-view
+const moreFiltersPanel = document.getElementById('moreFiltersPanel');
+const moreFiltersBtn = document.getElementById('moreFiltersBtn');
+const moreContextPanel = document.getElementById('moreContextPanel');
+const moreContextBack = document.getElementById('moreContextBack');
+const moreContextInfo = document.getElementById('moreContextInfo');
+const moreContextLines = document.getElementById('moreContextLines');
+const mMaxNew = document.getElementById('moreRngMaxNew');
+const mMinLen = document.getElementById('moreRngMinLen');
+const mMaxLen = document.getElementById('moreRngMaxLen');
+const mMinDate = document.getElementById('moreRngMinDate');
+const mMaxDate = document.getElementById('moreRngMaxDate');
+const mValNew = document.getElementById('moreValNew');
+const mValLen = document.getElementById('moreValLen');
+const mValDate = document.getElementById('moreValDate');
+const mFillNew = document.getElementById('moreFillNew');
+const mFillLen = document.getElementById('moreFillLen');
+const mFillDate = document.getElementById('moreFillDate');
 
 const wordListVirtual = createVirtualList(wordList, { renderRow: renderWordRow });
 
@@ -80,7 +96,13 @@ export function updatePrimerUI() {
 }
 
 function isFilteredOut(word) {
-  return (getHideHiragana() && isHiraganaOnly(word)) || (getHideKatakana() && isKatakanaOnly(word));
+  const hideH = getHideHiragana(), hideK = getHideKatakana();
+  if (hideH && isHiraganaOnly(word)) return true;
+  if (hideK && isKatakanaOnly(word)) return true;
+  // Both kana types hidden: drop every pure-kana word, including mixed-kana
+  // ones like よーし that match neither single check.
+  if (hideH && hideK && isKanaOnly(word)) return true;
+  return false;
 }
 
 // Share of pasted occurrences not yet known, weighted by count. Respects the
@@ -315,12 +337,7 @@ function renderWordList(entries) {
   updatePrimerUI();
 }
 
-// --- Context modal ---
-let _contextWord = '';
-
-const contextWordOcc = document.getElementById('contextWordOcc');
-const contextWordRank = document.getElementById('contextWordRank');
-
+// --- Context modal (More) ---
 function formatRelTime(ts) {
   const diff = Date.now() - ts;
   if (diff < 60000) return 'now';
@@ -330,10 +347,159 @@ function formatRelTime(ts) {
   return Math.floor(diff / 2592000000) + 'mo';
 }
 
+// Matched sentences for the current word, plus a per-sentence tokenization
+// cache (text -> content words) so the "new words per sentence" filter doesn't
+// re-tokenize on every change.
+let _sentData = [];          // { text, ts, len }
+let _sentWords = new Map();  // text -> [content words]
+let _sentCounting = false;
+
+function sentenceNewCount(text) {
+  const words = _sentWords.get(text);
+  if (!words) return null;
+  const known = getKnownSet();
+  let n = 0;
+  for (const w of words) if (!known.has(w) && !isFilteredOut(w)) n++;
+  return n;
+}
+
+function readMoreFilters() {
+  const val = e => Number(e.value);
+  return {
+    maxNew: val(mMaxNew) >= Number(mMaxNew.max) ? null : val(mMaxNew),
+    minLen: val(mMinLen) <= Number(mMinLen.min) ? null : val(mMinLen),
+    maxLen: val(mMaxLen) >= Number(mMaxLen.max) ? null : val(mMaxLen),
+    minDate: val(mMinDate) <= Number(mMinDate.min) ? null : val(mMinDate),
+    maxDate: val(mMaxDate) >= Number(mMaxDate.max) ? null : val(mMaxDate),
+  };
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'today';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+const MORE_FILTER_KEY = 'primerMoreFilters';
+
+function loadMoreFilters() {
+  try { return JSON.parse(localStorage.getItem(MORE_FILTER_KEY)) || null; } catch { return null; }
+}
+
+// Remember slider positions between words. Raw values are re-clamped to each
+// word's own data range on open, like the quiz filters.
+function saveMoreFilters() {
+  try {
+    localStorage.setItem(MORE_FILTER_KEY, JSON.stringify({
+      maxNew: mMaxNew.value, minLen: mMinLen.value, maxLen: mMaxLen.value,
+      minDate: mMinDate.value, maxDate: mMaxDate.value,
+    }));
+  } catch {}
+}
+
+function updateMoreLabels() {
+  mValNew.textContent = labelSingle(mMaxNew);
+  mValLen.textContent = labelPair(mMinLen, mMaxLen);
+  mValDate.textContent = labelPair(mMinDate, mMaxDate, fmtDate);
+}
+
+function setupMoreFilters() {
+  const lens = _sentData.map(s => s.len);
+  const tss = _sentData.map(s => s.ts);
+  const maxNew = Math.max(..._sentData.map(s => _sentWords.get(s.text)?.length || 0), 1);
+  const saved = loadMoreFilters();
+  const within = (v, lo, hi) => v != null && !Number.isNaN(v) && v >= lo && v <= hi;
+
+  setRange(mMaxNew, 0, maxNew, within(+saved?.maxNew, 0, maxNew) ? +saved.maxNew : maxNew);
+  const lenLo = Math.min(...lens), lenHi = Math.max(...lens);
+  setRange(mMinLen, lenLo, lenHi, within(+saved?.minLen, lenLo, lenHi) ? +saved.minLen : lenLo);
+  setRange(mMaxLen, lenLo, lenHi, within(+saved?.maxLen, lenLo, lenHi) ? +saved.maxLen : lenHi);
+  const tsLo = Math.min(...tss), tsHi = Math.max(...tss);
+  setRange(mMinDate, tsLo, tsHi, within(+saved?.minDate, tsLo, tsHi) ? +saved.minDate : tsLo);
+  setRange(mMaxDate, tsLo, tsHi, within(+saved?.maxDate, tsLo, tsHi) ? +saved.maxDate : tsHi);
+  updateMoreLabels();
+  fillSingle(mMaxNew, mFillNew);
+  fillDual(mMinLen, mMaxLen, mFillLen);
+  fillDual(mMinDate, mMaxDate, mFillDate);
+}
+
+function applyMoreFilters() {
+  const f = readMoreFilters();
+  const out = _sentData.filter(s =>
+    (f.minLen == null || s.len >= f.minLen) &&
+    (f.maxLen == null || s.len <= f.maxLen) &&
+    (f.minDate == null || s.ts >= f.minDate) &&
+    (f.maxDate == null || s.ts <= f.maxDate)
+  ).filter(s => {
+    if (f.maxNew == null) return true;
+    const n = sentenceNewCount(s.text);
+    return n == null || n <= f.maxNew; // unknown count (still counting) passes
+  });
+  renderSentenceList(out);
+}
+
+function renderSentenceList(list) {
+  contextSentences.innerHTML = '';
+  if (!list.length) {
+    contextSentences.innerHTML = '<p class="no-context-msg">No sentences match the current filters.</p>';
+    return;
+  }
+  for (const s of list) {
+    const row = document.createElement('div');
+    row.className = 'sentence-item sentence-item--clickable';
+    const txt = document.createElement('span');
+    txt.className = 'sentence-text';
+    txt.textContent = s.text;
+    row.appendChild(txt);
+
+    const meta = document.createElement('span');
+    meta.className = 'sentence-meta';
+    if (!_sentCounting) {
+      const n = sentenceNewCount(s.text);
+      if (n != null) {
+        const chip = document.createElement('span');
+        chip.className = 'sentence-new';
+        chip.textContent = `${n} new`;
+        meta.appendChild(chip);
+      }
+    }
+    const time = document.createElement('span');
+    time.className = 'sentence-time';
+    time.textContent = formatRelTime(s.ts);
+    meta.appendChild(time);
+    const link = document.createElement('span');
+    link.className = 'sentence-context-link';
+    link.textContent = 'Context';
+    meta.appendChild(link);
+    row.appendChild(meta);
+
+    row.addEventListener('click', () => openMoreContext(s.text));
+    contextSentences.appendChild(row);
+  }
+}
+
+async function countSentenceWords(texts) {
+  const tokenizer = await getTokenizer();
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    if (_sentWords.has(text)) continue;
+    const words = [];
+    for (const tok of tokenizer.tokenize(text)) {
+      if (!CONTENT_POS.has(tok.pos)) continue;
+      const w = (tok.pos === '動詞' || tok.pos === '形容詞')
+        ? (tok.basic_form || tok.surface_form).trim()
+        : tok.surface_form.trim();
+      if (w) words.push(w);
+    }
+    _sentWords.set(text, words);
+    if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+  }
+}
+
 export async function openContextModal(word) {
-  _contextWord = word;
   contextWordTitle.textContent = word;
   contextSentences.innerHTML = '<p class="no-context-msg">Loading...</p>';
+  showMoreList();
 
   // Show occurrences (left) and rank (right)
   const freq = getCurrentFreq().find(e => e.word === word);
@@ -341,57 +507,93 @@ export async function openContextModal(word) {
   const rankVal = getDictRank(word);
   contextWordRank.textContent = rankVal ? `#${rankVal}` : '';
 
-  await renderSentences(word);
-
-  // Load image
-  let saved = getWordImage(word);
-  if (!saved) saved = await getWordImageFromDB(word);
-  if (saved) {
-    contextImageUrl.value = saved;
-    contextWordImage.src = saved;
-    contextWordImage.classList.remove('hidden');
-  } else {
-    contextImageUrl.value = '';
-    contextWordImage.classList.add('hidden');
+  const sentences = await findSentences(word);
+  if (!sentences.length) {
+    contextSentences.innerHTML = '<p class="no-context-msg">No sentences found containing this word.</p>';
+    moreFiltersBtn.classList.add('hidden');
+    contextModal.classList.remove('hidden');
+    return;
   }
+
+  moreFiltersBtn.classList.remove('hidden');
+  _sentData = sentences.map(s => ({ text: s.text, ts: s.ts, len: [...s.text].length }));
+  setupMoreFilters();
+  applyMoreFilters();
+
+  // Tokenize every matched sentence in the background to derive the
+  // "new words per sentence" counts, then tighten filters once ready.
+  _sentCounting = true;
+  countSentenceWords(_sentData.map(s => s.text)).then(() => {
+    _sentCounting = false;
+    setupMoreFilters();
+    applyMoreFilters();
+  }).catch(() => { _sentCounting = false; applyMoreFilters(); });
+
   contextModal.classList.remove('hidden');
 }
 
-async function renderSentences(word) {
-  contextSentences.innerHTML = '<p class="no-context-msg">Loading...</p>';
-  const sentences = await findSentences(word);
-  contextSentences.innerHTML = '';
-  if (!sentences.length) {
-    contextSentences.innerHTML = '<p class="no-context-msg">No sentences found containing this word.</p>';
+async function openMoreContext(text) {
+  const ctx = await findSentenceContext(text);
+  moreContextLines.innerHTML = '';
+  if (!ctx) {
+    moreContextLines.innerHTML = '<p class="no-context-msg">Source text is no longer available.</p>';
+    showMoreContext();
     return;
   }
-  for (const { text, ts } of sentences) {
+  const { sentences, index } = ctx;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < sentences.length; i++) {
     const d = document.createElement('div');
-    d.className = 'sentence-item';
-    const textSpan = document.createElement('span');
-    textSpan.textContent = text;
-    d.appendChild(textSpan);
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'sentence-time';
-    timeSpan.textContent = formatRelTime(ts);
-    d.appendChild(timeSpan);
-    contextSentences.appendChild(d);
+    d.className = 'context-line' + (i === index ? ' context-line--current' : '');
+    d.textContent = sentences[i];
+    frag.appendChild(d);
   }
+  moreContextLines.appendChild(frag);
+  moreContextInfo.textContent = `${index + 1}/${sentences.length}`;
+  showMoreContext();
+  const cur = moreContextLines.children[index];
+  if (cur) moreContextLines.scrollTop = Math.max(0, cur.offsetTop);
+}
+
+function showMoreList() {
+  moreContextPanel.classList.add('hidden');
+  contextSentences.classList.remove('hidden');
+  moreFiltersBtn.classList.remove('hidden');
+}
+
+function showMoreContext() {
+  contextSentences.classList.add('hidden');
+  moreContextPanel.classList.remove('hidden');
+  moreFiltersBtn.classList.add('hidden');
 }
 
 function closeContextModal() { contextModal.classList.add('hidden'); }
 
-// Auto-save image URL on blur
-contextImageUrl.addEventListener('blur', () => {
-  const url = contextImageUrl.value.trim();
-  setWordImage(_contextWord, url);
-  if (url) {
-    contextWordImage.src = url;
-    contextWordImage.classList.remove('hidden');
-  } else {
-    contextWordImage.classList.add('hidden');
-  }
-});
+function wireMoreFilters() {
+  moreFiltersBtn.addEventListener('click', () => moreFiltersPanel.classList.remove('hidden'));
+  moreFiltersPanel.querySelector('.quiz-filters-close').addEventListener('click', () => moreFiltersPanel.classList.add('hidden'));
+  moreFiltersPanel.querySelector('.quiz-filters-backdrop').addEventListener('click', () => moreFiltersPanel.classList.add('hidden'));
+  mMaxNew.addEventListener('input', () => { fillSingle(mMaxNew, mFillNew); updateMoreLabels(); applyMoreFilters(); saveMoreFilters(); });
+  wireDual(mMinLen, mMaxLen, mFillLen);
+  wireDual(mMinDate, mMaxDate, mFillDate);
+  moreContextBack.addEventListener('click', showMoreList);
+  document.getElementById('moreFiltersReset').addEventListener('click', () => { localStorage.removeItem(MORE_FILTER_KEY); setupMoreFilters(); applyMoreFilters(); });
+}
+
+function wireDual(minEl, maxEl, fillEl) {
+  const apply = () => {
+    if (Number(minEl.value) > Number(maxEl.value)) {
+      if (document.activeElement === minEl) maxEl.value = minEl.value;
+      else minEl.value = maxEl.value;
+    }
+    fillDual(minEl, maxEl, fillEl);
+    updateMoreLabels();
+    applyMoreFilters();
+    saveMoreFilters();
+  };
+  minEl.addEventListener('input', apply);
+  maxEl.addEventListener('input', apply);
+}
 
 // --- Download modal ---
 export function openDownloadModal() { downloadModal.classList.remove('hidden'); }
@@ -415,7 +617,7 @@ function downloadUnique() {
 function downloadCSV() {
   const e = getVisible(); const BOM = '﻿'; const rows = ['word,count,sentences'];
   for (const { word, count } of e) {
-    const s = findSentences(word); const str = s.join(' | ');
+    const s = findSentences(word); const str = s.map(x => x.text).join(' | ');
     rows.push(`"${word}","${count}","${str.replace(/"/g, '""')}"`);
   }
   downloadTextFile(BOM + rows.join('\n'), 'words-with-sentences.csv'); closeDownloadModal();
@@ -442,18 +644,6 @@ sortSelect.addEventListener('change', () => {
 
 hideHiraganaCheckbox.addEventListener('change', () => { setHideHiragana(hideHiraganaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
 hideKatakanaCheckbox.addEventListener('change', () => { setHideKatakana(hideKatakanaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
-if (noSpoilerCheckbox) {
-  noSpoilerCheckbox.addEventListener('change', () => {
-    setNoSpoiler(noSpoilerCheckbox.checked);
-    if (_contextWord) renderSentences(_contextWord);
-  });
-}
-if (hideShortSentsCheckbox) {
-  hideShortSentsCheckbox.addEventListener('change', () => {
-    setHideShortSents(hideShortSentsCheckbox.checked);
-    if (_contextWord) renderSentences(_contextWord);
-  });
-}
 downloadBtn.addEventListener('click', openDownloadModal);
 
 // Upload modal
@@ -504,6 +694,8 @@ downloadModal.querySelectorAll('.download-option').forEach(opt => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!moreFiltersPanel.classList.contains('hidden')) { moreFiltersPanel.classList.add('hidden'); return; }
+    if (!contextModal.classList.contains('hidden') && !moreContextPanel.classList.contains('hidden')) { showMoreList(); return; }
     if (!contextModal.classList.contains('hidden')) closeContextModal();
     if (!downloadModal.classList.contains('hidden')) closeDownloadModal();
   }
@@ -513,8 +705,7 @@ document.addEventListener('keydown', (e) => {
 export function initPrimer() {
   hideHiraganaCheckbox.checked = getHideHiragana();
   hideKatakanaCheckbox.checked = getHideKatakana();
-  if (noSpoilerCheckbox) noSpoilerCheckbox.checked = getNoSpoiler();
-  if (hideShortSentsCheckbox) hideShortSentsCheckbox.checked = getHideShortSents();
+  wireMoreFilters();
   updatePrimerUI();
   checkSavedText();
 
