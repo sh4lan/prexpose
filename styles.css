@@ -14,6 +14,7 @@
   --text-muted: #999999;
   --primary: #6b7db3;
   --primary-hover: #5a6ba0;
+  --primary-alt: #6b7db3;
   --danger: #c45353;
   --danger-hover: #b04444;
   --drop-bg: #f5f5f5;
@@ -30,6 +31,35 @@
   --chart-axis: #999999;
 }
 
+/* Red: white bg, vivid red primary + blue secondary accent. The neutrals are
+   cool so they sit with the blue secondary text (red-gray would clash). */
+.red {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --border: #e6e8eb;
+  --text: #1a1a1a;
+  --text-muted: #8e959e;
+  --primary: #ff3d59;
+  --primary-hover: #e02f4a;
+  --primary-alt: #007dff;
+  --danger: #c45353;
+  --danger-hover: #b04444;
+  --drop-bg: #eef1f6;
+  --added-bg: #eef1f6;
+  --added-hover: #e4e9f1;
+  --flagged-bg: #ffede8;
+  --flagged-hover: #ffe4e0;
+  --btn-text: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-border: #e5e5e5;
+  --btn-secondary-hover: #eef1f6;
+  --surface-raised: #ffffff;
+  --chart-line: #ff3d59;
+  --chart-area: rgba(255, 61, 89, 0.13);
+  --chart-grid: #e6e8eb;
+  --chart-axis: #8e959e;
+}
+
 .dark {
   --bg: #1a1a1a;
   --surface: #222222;
@@ -38,6 +68,7 @@
   --text-muted: #777777;
   --primary: #6b7db3;
   --primary-hover: #7d8fc4;
+  --primary-alt: #6b7db3;
   --danger: #c45353;
   --danger-hover: #d46868;
   --drop-bg: #2a2a2a;
@@ -65,6 +96,7 @@
   --text-muted: #8a93a5;
   --primary: #88c0d0;
   --primary-hover: #9fd1de;
+  --primary-alt: #88c0d0;
   --danger: #bf616a;
   --danger-hover: #ce7079;
   --drop-bg: #434c5e;
@@ -92,6 +124,7 @@
   --text-muted: #8d7c5e;
   --primary: #a0652f;
   --primary-hover: #8d5626;
+  --primary-alt: #a0652f;
   --danger: #b0503a;
   --danger-hover: #9c4632;
   --drop-bg: #e9ddc2;
@@ -141,7 +174,7 @@ body {
 
 .clickable-stat {
   cursor: pointer;
-  color: var(--primary);
+  color: var(--primary-alt);
 }
 
 .clickable-stat:hover {
@@ -211,10 +244,76 @@ body {
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+  accent-color: var(--primary);
 }
 
 .control-item input[type="checkbox"] {
   cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* Custom sort dropdown: replaces the native <select> so the open menu (and its
+   highlighted option) follows the theme instead of the browser's blue. */
+.custom-select {
+  position: relative;
+  display: inline-block;
+}
+
+.custom-select-btn {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 1.4rem 0.2rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+  line-height: 1.4;
+}
+
+.custom-select-btn::after {
+  content: "▾";
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.custom-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  z-index: 300;
+}
+
+.custom-select-option {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.custom-select-option:hover {
+  background: var(--drop-bg);
+}
+
+.custom-select-option[aria-selected="true"] {
+  color: var(--primary);
+  font-weight: 600;
 }
 
 /* Status Bar */
@@ -279,10 +378,11 @@ body {
   flex-shrink: 0;
 }
 
-.theme-swatch[data-theme="light"] { background: #ffffff; }
-.theme-swatch[data-theme="dark"]  { background: #1a1a1a; }
-.theme-swatch[data-theme="nord"]  { background: #2e3440; }
-.theme-swatch[data-theme="sepia"] { background: #f1e8d4; }
+.theme-swatch[data-theme="light"]     { background: #ffffff; }
+.theme-swatch[data-theme="red"]       { background: #ffffff; }
+.theme-swatch[data-theme="dark"]      { background: #1a1a1a; }
+.theme-swatch[data-theme="nord"]      { background: #2e3440; }
+.theme-swatch[data-theme="sepia"]     { background: #f1e8d4; }
 
 .theme-option-label {
   flex: 1;
@@ -549,7 +649,7 @@ body {
 .btn-text {
   background: none;
   border: none;
-  color: var(--primary);
+  color: var(--primary-alt);
   padding: 0.45rem 0.75rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -569,11 +669,11 @@ body {
 }
 
 .btn-text-danger {
-  color: var(--danger);
+  color: var(--primary);
 }
 
 .btn-text-danger:hover {
-  background: var(--danger);
+  background: var(--primary);
   color: var(--btn-text);
 }
 
@@ -590,7 +690,7 @@ body {
 .btn-undo-text {
   background: none;
   border: none;
-  color: var(--danger);
+  color: var(--primary);
   padding: 0.45rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -600,7 +700,7 @@ body {
 }
 
 .btn-undo-text:hover {
-  background: var(--danger);
+  background: var(--primary);
   color: var(--btn-text);
 }
 
@@ -774,16 +874,33 @@ body {
   max-height: none;
 }
 
-/* Bigger word title + sentences inside the context modal */
+/* Word title + sentences inside the context modal: a bit larger than the
+   rest of the app for readability, but on a consistent scale (title ~1.7rem,
+   sentences ~1.25rem) so the header meta and row chips don't look dwarfed. */
 .modal-content-context .modal-header h2 {
-  font-size: 2.2rem;
-  line-height: 1.2;
+  font-size: 1.7rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .modal-content-context .sentence-item {
-  font-size: 1.35rem;
-  line-height: 1.8;
-  padding: 0.8rem 0;
+  font-size: 1.25rem;
+  line-height: 1.7;
+  padding: 0.7rem 0;
+}
+
+.modal-content-context .sentence-meta {
+  font-size: 0.9rem;
+  /* Match the sentence text's half-leading so the small meta lines up with
+     the first line of the Japanese sentence instead of floating above it. */
+  padding-top: 0.4rem;
+}
+
+.modal-content-context .sentence-new,
+.modal-content-context .sentence-time,
+.modal-content-context .sentence-context-link {
+  font-size: 0.8rem;
 }
 
 .modal-header {
@@ -857,8 +974,9 @@ body {
   white-space: nowrap;
 }
 
+/* Only the hovered row's Context link takes the secondary accent. */
 .sentence-item--clickable:hover .sentence-context-link {
-  color: var(--primary);
+  color: var(--primary-alt);
 }
 
 /* Context sub-view header (surrounding sentences of a clicked row) */
@@ -1172,53 +1290,19 @@ body {
   font-weight: 500;
 }
 
-/* Filters drawer */
-.quiz-filters-panel {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-}
-
-.quiz-filters-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.quiz-filters-drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 340px;
-  max-width: 90vw;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.15);
-}
-
-.quiz-filters-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.quiz-filters-title {
-  font-size: 1rem;
-  font-weight: 700;
+/* Filters popup (shared by quiz, word-context, and word-list filters).
+   A centered card that reuses the app's modal chrome for consistency. */
+.quiz-filters-card {
+  max-width: 440px;
+  width: 92%;
 }
 
 .quiz-filters-body {
-  flex: 1;
   overflow-y: auto;
-  padding: 1rem 1.25rem;
+  padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.85rem;
 }
 
 .quiz-filters-foot {
@@ -1226,10 +1310,15 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* Each filter is its own little card */
 .quiz-filter-block {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.25rem;
+  background: var(--drop-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
 }
 
 .quiz-filter-block .control-item {
@@ -1237,24 +1326,33 @@ body {
 }
 
 .quiz-filter-label {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
+/* Value shown as a pill badge */
 .quiz-filter-val {
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Dual-thumb range slider */
 .dual-range {
   position: relative;
-  height: 24px;
-  margin: 0.25rem 0;
+  height: 28px;
+  margin: 0.25rem 0 0.1rem;
 }
 
 .dual-range-track {
@@ -1262,10 +1360,10 @@ body {
   left: 6px;
   right: 6px;
   top: 50%;
-  height: 4px;
+  height: 6px;
   transform: translateY(-50%);
   background: var(--border);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .dual-range-fill {
@@ -1273,7 +1371,7 @@ body {
   top: 0;
   bottom: 0;
   background: var(--primary);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .dual-range-input {
@@ -1291,21 +1389,29 @@ body {
 .dual-range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--primary);
   border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   pointer-events: auto;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.dual-range-input::-webkit-slider-thumb:hover {
+  transform: scale(1.08);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
 }
 
 .dual-range-input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--primary);
   border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -1316,6 +1422,18 @@ body {
 
 .dual-range-max {
   z-index: 2;
+}
+
+/* Filter button stays on the secondary accent when active (it's a text
+   button; active just means "a filter is set", not primary-red). */
+.btn--active {
+  color: var(--primary-alt);
+  font-weight: 700;
+}
+
+.btn--active:hover {
+  color: var(--primary-alt);
+  background: var(--drop-bg);
 }
 
 /* Responsive */

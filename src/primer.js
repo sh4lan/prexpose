@@ -10,7 +10,7 @@ import {
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
 import { buildQuizData } from './quizdata.js';
-import { setRange, fillDual, fillSingle, labelSingle, labelPair } from './ranges.js';
+import { setRange, fillDual, fillSingle, labelSingle, labelPair, sliderToLog } from './ranges.js';
 
 const PASTE_KEY = 'primerPasteText';
 
@@ -21,7 +21,9 @@ const uploadBtn = document.getElementById('uploadBtn');
 const quizBtn = document.getElementById('quizBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const pasteStatus = document.getElementById('pasteStatus');
-const sortSelect = document.getElementById('sortSelect');
+const sortSelectBtn = document.getElementById('sortSelectBtn');
+const sortSelectMenu = document.getElementById('sortSelectMenu');
+let _sortValue = 'count';
 const hideHiraganaCheckbox = document.getElementById('hideHiraganaCheckbox');
 const hideKatakanaCheckbox = document.getElementById('hideKatakanaCheckbox');
 const wordSection = document.getElementById('wordSection');
@@ -72,6 +74,20 @@ const mFillNew = document.getElementById('moreFillNew');
 const mFillLen = document.getElementById('moreFillLen');
 const mFillDate = document.getElementById('moreFillDate');
 
+// Word-list filters (occurrences / dictionary rank)
+const listFiltersPanel = document.getElementById('listFiltersPanel');
+const listFiltersBtn = document.getElementById('listFiltersBtn');
+const listFiltersClose = document.getElementById('listFiltersClose');
+const lMinOcc = document.getElementById('listRngMinOcc');
+const lMaxOcc = document.getElementById('listRngMaxOcc');
+const lMinRank = document.getElementById('listRngMinRank');
+const lMaxRank = document.getElementById('listRngMaxRank');
+const lValOcc = document.getElementById('listValOcc');
+const lValRank = document.getElementById('listValRank');
+const lFillOcc = document.getElementById('listFillOcc');
+const lFillRank = document.getElementById('listFillRank');
+const lRankBlock = document.getElementById('listRankBlock');
+
 const wordListVirtual = createVirtualList(wordList, { renderRow: renderWordRow });
 
 // --- Render helpers ---
@@ -105,14 +121,128 @@ function isFilteredOut(word) {
   return false;
 }
 
+// --- Word-list filters (occurrences / dictionary rank) ---
+// Kept in sync with the quiz-style slider UI; applies in the same three places
+// as the kana filters: applyFilters, updateNewPercent, and getVisible.
+const LIST_FILTER_KEY = 'primerListFilters';
+let _listFilters = { minOcc: null, maxOcc: null, minRank: null, maxRank: null };
+
+function listRangeOut(e) {
+  const r = getDictRank(e.word);
+  if (_listFilters.minOcc != null && e.count < _listFilters.minOcc) return true;
+  if (_listFilters.maxOcc != null && e.count > _listFilters.maxOcc) return true;
+  // A word with no dict rank behaves like infinite rank: it passes a min-rank
+  // filter and is excluded by a max-rank filter.
+  if (_listFilters.minRank != null) { if (r != null && r < _listFilters.minRank) return true; }
+  if (_listFilters.maxRank != null) { if (r == null || r > _listFilters.maxRank) return true; }
+  return false;
+}
+
+function loadListFilters() {
+  try { return JSON.parse(localStorage.getItem(LIST_FILTER_KEY)) || null; } catch { return null; }
+}
+// Only groups the user has manually moved are remembered (see _moreTouched).
+let _listTouched = new Set(); // 'occ' | 'rank'
+function touchList(g) { _listTouched.add(g); listFiltersBtn.classList.add('btn--active'); }
+function saveListFilters() {
+  const data = { touched: [..._listTouched] };
+  if (_listTouched.has('occ')) { data.minOcc = lMinOcc.value; data.maxOcc = lMaxOcc.value; }
+  if (_listTouched.has('rank')) { data.minRank = lMinRank.value; data.maxRank = lMaxRank.value; }
+  try { localStorage.setItem(LIST_FILTER_KEY, JSON.stringify(data)); } catch {}
+}
+
+function rankFromListSlider(el, side) {
+  const v = Number(el.value), lo = Number(el.min), hi = Number(el.max);
+  if (side === 'min' && v <= lo) return null;
+  if (side === 'max' && v >= hi) return null;
+  return sliderToLog(v, lo, hi);
+}
+
+function readListFilters() {
+  const val = e => Number(e.value);
+  _listFilters.minOcc = val(lMinOcc) <= Number(lMinOcc.min) ? null : val(lMinOcc);
+  _listFilters.maxOcc = val(lMaxOcc) >= Number(lMaxOcc.max) ? null : val(lMaxOcc);
+  _listFilters.minRank = rankFromListSlider(lMinRank, 'min');
+  _listFilters.maxRank = rankFromListSlider(lMaxRank, 'max');
+}
+
+// Display a rank-slider coordinate as its log-scaled rank.
+function fmtListRankSlider(v) {
+  const r = sliderToLog(v, Number(lMinRank.min), Number(lMaxRank.max));
+  return r <= 0 ? '0' : r.toLocaleString();
+}
+
+function updateListLabels() {
+  lValOcc.textContent = labelPair(lMinOcc, lMaxOcc);
+  lValRank.textContent = labelPair(lMinRank, lMaxRank, fmtListRankSlider);
+}
+
+// (Re)range the sliders to the current extraction + dict. Saved values are
+// re-clamped to the new range, same as the quiz filters.
+function setupListFilters() {
+  const freq = getCurrentFreq();
+  const maxOcc = Math.max(...freq.map(e => e.count), 1);
+  let rankMax = 1;
+  for (const e of freq) { const r = getDictRank(e.word); if (r != null && r > rankMax) rankMax = r; }
+  const saved = loadListFilters();
+  const touched = new Set(saved?.touched || []);
+  _listTouched = touched;
+  const within = (v, lo, hi) => v != null && !Number.isNaN(v) && v >= lo && v <= hi;
+  const pick = (group, key, fallback, lo, hi) => (touched.has(group) && within(+saved[key], lo, hi) ? +saved[key] : fallback);
+
+  setRange(lMinOcc, 1, maxOcc, pick('occ', 'minOcc', 1, 1, maxOcc));
+  setRange(lMaxOcc, 1, maxOcc, pick('occ', 'maxOcc', maxOcc, 1, maxOcc));
+  setRange(lMinRank, 0, rankMax, pick('rank', 'minRank', 0, 0, rankMax));
+  setRange(lMaxRank, 0, rankMax, pick('rank', 'maxRank', rankMax, 0, rankMax));
+  lRankBlock.classList.toggle('hidden', !getDictMap());
+  readListFilters();
+  updateListLabels();
+  fillDual(lMinOcc, lMaxOcc, lFillOcc);
+  fillDual(lMinRank, lMaxRank, lFillRank);
+  listFiltersBtn.classList.toggle('btn--active', _listTouched.size > 0);
+}
+
+function closeListFilters() { listFiltersPanel.classList.add('hidden'); }
+
+function wireListDual(minEl, maxEl, fillEl, group) {
+  const apply = () => {
+    if (Number(minEl.value) > Number(maxEl.value)) {
+      if (document.activeElement === minEl) maxEl.value = minEl.value;
+      else minEl.value = maxEl.value;
+    }
+    touchList(group);
+    fillDual(minEl, maxEl, fillEl);
+    readListFilters();
+    updateListLabels();
+    saveListFilters();
+    applyFilters();
+  };
+  minEl.addEventListener('input', apply);
+  maxEl.addEventListener('input', apply);
+}
+
+function wireListFilters() {
+  listFiltersBtn.addEventListener('click', () => { setupListFilters(); listFiltersPanel.classList.remove('hidden'); });
+  listFiltersClose.addEventListener('click', closeListFilters);
+  listFiltersPanel.querySelector('.modal-backdrop').addEventListener('click', closeListFilters);
+  wireListDual(lMinOcc, lMaxOcc, lFillOcc, 'occ');
+  wireListDual(lMinRank, lMaxRank, lFillRank, 'rank');
+  document.getElementById('listFiltersReset').addEventListener('click', () => {
+    _listTouched.clear();
+    localStorage.removeItem(LIST_FILTER_KEY);
+    setupListFilters();
+    applyFilters();
+  });
+}
+
 // Share of pasted occurrences not yet known, weighted by count. Respects the
-// kana filters so "42% new" matches exactly what the list is showing.
+// kana + list filters so "42% new" matches exactly what the list is showing.
 function updateNewPercent() {
   if (!newPct) return;
   const freq = getCurrentFreq();
   let total = 0, known = 0;
   for (const { word, count } of freq) {
-    if (isFilteredOut(word)) continue;
+    if (isFilteredOut(word) || listRangeOut({ word, count })) continue;
     total += count;
     if (getKnownSet().has(word)) known += count;
   }
@@ -196,6 +326,7 @@ export async function extractFromPaste(text) {
     // Save session for sentence lookup (all extracted words, not just new)
     saveSession(text, wordMap, varMap).catch(() => {});
 
+    setupListFilters();
     applyFilters();
     pasteStatus.textContent = `Extracted ${entries.length} unique words (${totalTokens} total).`;
     if (quizBtn) quizBtn.classList.remove('hidden');
@@ -236,8 +367,9 @@ function extractTextFromFile(file, text) {
 export function applyFilters(sortOverride) {
   let entries = getCurrentFreq().slice().filter(e => !getKnownSet().has(e.word));
   if (getHideHiragana() || getHideKatakana()) entries = entries.filter(e => !isFilteredOut(e.word));
+  entries = entries.filter(e => !listRangeOut(e));
 
-  const mode = sortOverride || sortSelect.value || 'count';
+  const mode = sortOverride || _sortValue || 'count';
   if (mode === 'rank' && getDictMap()) {
     entries.sort((a, b) => {
       const ra = getDictRank(a.word), rb = getDictRank(b.word);
@@ -269,8 +401,8 @@ export function applyFilters(sortOverride) {
 }
 
 export function reprime() {
-  if (getCurrentAllWords().length > 0) applyFilters();
-  else updatePrimerUI();
+  if (getCurrentAllWords().length > 0) { setupListFilters(); applyFilters(); }
+  else { setupListFilters(); updatePrimerUI(); }
 }
 
 // --- Render word list ---
@@ -386,15 +518,18 @@ function loadMoreFilters() {
   try { return JSON.parse(localStorage.getItem(MORE_FILTER_KEY)) || null; } catch { return null; }
 }
 
-// Remember slider positions between words. Raw values are re-clamped to each
-// word's own data range on open, like the quiz filters.
+// Only groups the user has manually moved are remembered. Saving snapshots
+// every slider, so without this an untouched group's current (per-word) range
+// would leak into other words via the shared blob.
+let _moreTouched = new Set(); // 'maxNew' | 'len' | 'date'
+function touchMore(g) { _moreTouched.add(g); moreFiltersBtn.classList.add('btn--active'); }
+
 function saveMoreFilters() {
-  try {
-    localStorage.setItem(MORE_FILTER_KEY, JSON.stringify({
-      maxNew: mMaxNew.value, minLen: mMinLen.value, maxLen: mMaxLen.value,
-      minDate: mMinDate.value, maxDate: mMaxDate.value,
-    }));
-  } catch {}
+  const data = { touched: [..._moreTouched] };
+  if (_moreTouched.has('maxNew')) data.maxNew = mMaxNew.value;
+  if (_moreTouched.has('len')) { data.minLen = mMinLen.value; data.maxLen = mMaxLen.value; }
+  if (_moreTouched.has('date')) { data.minDate = mMinDate.value; data.maxDate = mMaxDate.value; }
+  try { localStorage.setItem(MORE_FILTER_KEY, JSON.stringify(data)); } catch {}
 }
 
 function updateMoreLabels() {
@@ -408,19 +543,24 @@ function setupMoreFilters() {
   const tss = _sentData.map(s => s.ts);
   const maxNew = Math.max(..._sentData.map(s => _sentWords.get(s.text)?.length || 0), 1);
   const saved = loadMoreFilters();
+  const touched = new Set(saved?.touched || []);
+  _moreTouched = touched;
   const within = (v, lo, hi) => v != null && !Number.isNaN(v) && v >= lo && v <= hi;
+  // group is the touched-set key ('len', 'date'); key is the saved field name.
+  const pick = (group, key, fallback, lo, hi) => (touched.has(group) && within(+saved[key], lo, hi) ? +saved[key] : fallback);
 
-  setRange(mMaxNew, 0, maxNew, within(+saved?.maxNew, 0, maxNew) ? +saved.maxNew : maxNew);
+  setRange(mMaxNew, 0, maxNew, pick('maxNew', 'maxNew', maxNew, 0, maxNew));
   const lenLo = Math.min(...lens), lenHi = Math.max(...lens);
-  setRange(mMinLen, lenLo, lenHi, within(+saved?.minLen, lenLo, lenHi) ? +saved.minLen : lenLo);
-  setRange(mMaxLen, lenLo, lenHi, within(+saved?.maxLen, lenLo, lenHi) ? +saved.maxLen : lenHi);
+  setRange(mMinLen, lenLo, lenHi, pick('len', 'minLen', lenLo, lenLo, lenHi));
+  setRange(mMaxLen, lenLo, lenHi, pick('len', 'maxLen', lenHi, lenLo, lenHi));
   const tsLo = Math.min(...tss), tsHi = Math.max(...tss);
-  setRange(mMinDate, tsLo, tsHi, within(+saved?.minDate, tsLo, tsHi) ? +saved.minDate : tsLo);
-  setRange(mMaxDate, tsLo, tsHi, within(+saved?.maxDate, tsLo, tsHi) ? +saved.maxDate : tsHi);
+  setRange(mMinDate, tsLo, tsHi, pick('date', 'minDate', tsLo, tsLo, tsHi));
+  setRange(mMaxDate, tsLo, tsHi, pick('date', 'maxDate', tsHi, tsLo, tsHi));
   updateMoreLabels();
   fillSingle(mMaxNew, mFillNew);
   fillDual(mMinLen, mMaxLen, mFillLen);
   fillDual(mMinDate, mMaxDate, mFillDate);
+  moreFiltersBtn.classList.toggle('btn--active', _moreTouched.size > 0);
 }
 
 function applyMoreFilters() {
@@ -573,19 +713,20 @@ function wireMoreFilters() {
   moreFiltersBtn.addEventListener('click', () => moreFiltersPanel.classList.remove('hidden'));
   moreFiltersPanel.querySelector('.quiz-filters-close').addEventListener('click', () => moreFiltersPanel.classList.add('hidden'));
   moreFiltersPanel.querySelector('.quiz-filters-backdrop').addEventListener('click', () => moreFiltersPanel.classList.add('hidden'));
-  mMaxNew.addEventListener('input', () => { fillSingle(mMaxNew, mFillNew); updateMoreLabels(); applyMoreFilters(); saveMoreFilters(); });
-  wireDual(mMinLen, mMaxLen, mFillLen);
-  wireDual(mMinDate, mMaxDate, mFillDate);
+  mMaxNew.addEventListener('input', () => { touchMore('maxNew'); fillSingle(mMaxNew, mFillNew); updateMoreLabels(); applyMoreFilters(); saveMoreFilters(); });
+  wireDual(mMinLen, mMaxLen, mFillLen, 'len');
+  wireDual(mMinDate, mMaxDate, mFillDate, 'date');
   moreContextBack.addEventListener('click', showMoreList);
-  document.getElementById('moreFiltersReset').addEventListener('click', () => { localStorage.removeItem(MORE_FILTER_KEY); setupMoreFilters(); applyMoreFilters(); });
+  document.getElementById('moreFiltersReset').addEventListener('click', () => { _moreTouched.clear(); localStorage.removeItem(MORE_FILTER_KEY); setupMoreFilters(); applyMoreFilters(); });
 }
 
-function wireDual(minEl, maxEl, fillEl) {
+function wireDual(minEl, maxEl, fillEl, group) {
   const apply = () => {
     if (Number(minEl.value) > Number(maxEl.value)) {
       if (document.activeElement === minEl) maxEl.value = minEl.value;
       else minEl.value = maxEl.value;
     }
+    touchMore(group);
     fillDual(minEl, maxEl, fillEl);
     updateMoreLabels();
     applyMoreFilters();
@@ -600,7 +741,10 @@ export function openDownloadModal() { downloadModal.classList.remove('hidden'); 
 function closeDownloadModal() { downloadModal.classList.add('hidden'); }
 
 function getVisible() {
-  return getCurrentFreq().filter(e => !getKnownSet().has(e.word)).filter(e => !isFilteredOut(e.word));
+  return getCurrentFreq()
+    .filter(e => !getKnownSet().has(e.word))
+    .filter(e => !isFilteredOut(e.word))
+    .filter(e => !listRangeOut(e));
 }
 function downloadWeighted() {
   const e = getVisible(); const l = [];
@@ -638,8 +782,34 @@ extractBtn.addEventListener('click', () => {
   extractFromPaste(text);
 });
 
-sortSelect.addEventListener('change', () => {
-  applyFilters(sortSelect.value);
+// Custom sort dropdown (native <select> menus can't be themed — the open
+// popup's highlight stays the browser's blue). State lives in _sortValue.
+function setSortMenu(open) {
+  sortSelectMenu.classList.toggle('hidden', !open);
+  sortSelectBtn.setAttribute('aria-expanded', String(open));
+}
+
+sortSelectBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSortMenu(sortSelectMenu.classList.contains('hidden'));
+});
+
+sortSelectMenu.querySelectorAll('.custom-select-option').forEach(opt => {
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _sortValue = opt.dataset.value;
+    sortSelectBtn.textContent = opt.textContent;
+    for (const o of sortSelectMenu.querySelectorAll('.custom-select-option')) {
+      o.setAttribute('aria-selected', String(o === opt));
+    }
+    setSortMenu(false);
+    applyFilters(_sortValue);
+  });
+});
+
+document.addEventListener('click', () => setSortMenu(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !sortSelectMenu.classList.contains('hidden')) setSortMenu(false);
 });
 
 hideHiraganaCheckbox.addEventListener('change', () => { setHideHiragana(hideHiraganaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
@@ -694,6 +864,7 @@ downloadModal.querySelectorAll('.download-option').forEach(opt => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!listFiltersPanel.classList.contains('hidden')) { closeListFilters(); return; }
     if (!moreFiltersPanel.classList.contains('hidden')) { moreFiltersPanel.classList.add('hidden'); return; }
     if (!contextModal.classList.contains('hidden') && !moreContextPanel.classList.contains('hidden')) { showMoreList(); return; }
     if (!contextModal.classList.contains('hidden')) closeContextModal();
@@ -706,6 +877,8 @@ export function initPrimer() {
   hideHiraganaCheckbox.checked = getHideHiragana();
   hideKatakanaCheckbox.checked = getHideKatakana();
   wireMoreFilters();
+  wireListFilters();
+  setupListFilters();
   updatePrimerUI();
   checkSavedText();
 

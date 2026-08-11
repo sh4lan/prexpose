@@ -41,16 +41,16 @@
     </div>
   </div>
 
-  <!-- Filters drawer -->
-  <div id="quizFiltersPanel" class="quiz-filters-panel hidden">
-    <div class="quiz-filters-backdrop"></div>
-    <div class="quiz-filters-drawer">
-      <div class="quiz-filters-head">
-        <span class="quiz-filters-title">Filters</span>
+  <!-- Filters popup -->
+  <div id="quizFiltersPanel" class="modal hidden">
+    <div class="modal-backdrop quiz-filters-backdrop"></div>
+    <div class="modal-content quiz-filters-card">
+      <div class="modal-header">
+        <h3>Filters</h3>
         <span class="bar-spacer"></span>
-        <button class="btn btn-text quiz-filters-close" aria-label="Close filters">&times;</button>
+        <button class="modal-close btn btn-text quiz-filters-close" aria-label="Close filters">&times;</button>
       </div>
-      <div class="quiz-filters-body">
+      <div class="modal-body quiz-filters-body">
         <div class="quiz-filter-block">
           <div class="quiz-filter-label">New words per sentence <span class="quiz-filter-val" id="valMaxNew"></span></div>
           <div class="dual-range">

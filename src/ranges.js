@@ -36,3 +36,22 @@ export function labelPair(minEl, maxEl, fmt) {
   const hi = fmt ? fmt(Number(maxEl.value)) : maxEl.value;
   return `${lo} — ${hi}`;
 }
+
+// Dictionary rank is log-scaled on the slider so low ranks (e.g. 3k) are easy
+// to hit when the max is large (e.g. 100k). The slider coordinate stays
+// linear (min..max); these two convert between a coordinate and its rank.
+// The slider's floor (min) maps to 0 = "no lower bound"; the first usable
+// step is rank 1, and rank grows geometrically to the ceiling.
+export function sliderToLog(v, lo, hi) {
+  if (v <= lo) return 0;
+  if (v >= hi) return hi;
+  const t = (v - lo) / (hi - lo);
+  return Math.round(Math.pow(hi, t));
+}
+
+export function logToSlider(r, lo, hi) {
+  if (r <= 1) return lo;
+  if (r >= hi) return hi;
+  const t = Math.log(r) / Math.log(hi);
+  return lo + t * (hi - lo);
+}

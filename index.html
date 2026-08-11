@@ -34,11 +34,14 @@
     <section class="controls-bar">
       <label class="control-item">
         Sort:
-        <select id="sortSelect">
-          <option value="count">By occurrences</option>
-          <option value="rank">By dictionary rank</option>
-          <option value="chrono">Chronological</option>
-        </select>
+        <span class="custom-select" id="sortSelect">
+          <button type="button" class="custom-select-btn" id="sortSelectBtn" aria-haspopup="listbox" aria-expanded="false">By occurrences</button>
+          <ul id="sortSelectMenu" class="custom-select-menu hidden" role="listbox" aria-label="Sort by">
+            <li role="option" aria-selected="true" data-value="count" class="custom-select-option">By occurrences</li>
+            <li role="option" aria-selected="false" data-value="rank" class="custom-select-option">By dictionary rank</li>
+            <li role="option" aria-selected="false" data-value="chrono" class="custom-select-option">Chronological</li>
+          </ul>
+        </span>
       </label>
       <label class="control-item">
         <input type="checkbox" id="hideHiraganaCheckbox"> Hide hiragana
@@ -46,6 +49,7 @@
       <label class="control-item">
         <input type="checkbox" id="hideKatakanaCheckbox"> Hide katakana
       </label>
+      <button id="listFiltersBtn" class="btn btn-text">Filters</button>
       <span id="newPct" class="stat new-pct"></span>
     </section>
 
@@ -101,16 +105,49 @@
       </div>
     </div>
 
-    <!-- Word-context filters drawer -->
-    <div id="moreFiltersPanel" class="quiz-filters-panel hidden">
-      <div class="quiz-filters-backdrop"></div>
-      <div class="quiz-filters-drawer">
-        <div class="quiz-filters-head">
-          <span class="quiz-filters-title">Filters</span>
+    <!-- Word-list filters popup (occurrences / dictionary rank) -->
+    <div id="listFiltersPanel" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content quiz-filters-card">
+        <div class="modal-header">
+          <h3>Filters</h3>
           <span class="bar-spacer"></span>
-          <button class="btn btn-text quiz-filters-close" aria-label="Close filters">&times;</button>
+          <button class="modal-close btn btn-text" id="listFiltersClose" aria-label="Close filters">&times;</button>
         </div>
-        <div class="quiz-filters-body">
+        <div class="modal-body quiz-filters-body">
+          <div class="quiz-filter-block">
+            <div class="quiz-filter-label">Occurrences <span class="quiz-filter-val" id="listValOcc"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="listFillOcc"></div></div>
+              <input type="range" id="listRngMinOcc" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="listRngMaxOcc" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+          <div class="quiz-filter-block" id="listRankBlock">
+            <div class="quiz-filter-label">Dictionary rank <span class="quiz-filter-val" id="listValRank"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="listFillRank"></div></div>
+              <input type="range" id="listRngMinRank" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="listRngMaxRank" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+        </div>
+        <div class="quiz-filters-foot">
+          <button id="listFiltersReset" class="btn btn-text">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Word-context filters popup -->
+    <div id="moreFiltersPanel" class="modal hidden">
+      <div class="modal-backdrop quiz-filters-backdrop"></div>
+      <div class="modal-content quiz-filters-card">
+        <div class="modal-header">
+          <h3>Filters</h3>
+          <span class="bar-spacer"></span>
+          <button class="modal-close btn btn-text quiz-filters-close" aria-label="Close filters">&times;</button>
+        </div>
+        <div class="modal-body quiz-filters-body">
           <div class="quiz-filter-block">
             <div class="quiz-filter-label">New words per sentence <span class="quiz-filter-val" id="moreValNew"></span></div>
             <div class="dual-range">

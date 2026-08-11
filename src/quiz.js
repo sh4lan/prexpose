@@ -6,7 +6,7 @@ import {
 } from './state.js';
 import { getDictRank, getDictMap, loadDictFromDB } from './dict.js';
 import { buildQuizData } from './quizdata.js';
-import { setRange, pct, fillDual, fillSingle, labelSingle, labelPair } from './ranges.js';
+import { setRange, pct, fillDual, fillSingle, labelSingle, labelPair, sliderToLog } from './ranges.js';
 
 const FILTER_KEY = 'primerQuizFilters';
 
@@ -65,6 +65,13 @@ function kanaHidden(word) {
 // A slider at an extreme means "no filter": min at its floor or max at its
 // ceiling means unconstrained. Words with no dict rank behave like infinite
 // rank — they pass a min-rank filter and are excluded by a max-rank filter.
+function rankFromSlider(el, side) {
+  const v = Number(el.value), lo = Number(el.min), hi = Number(el.max);
+  if (side === 'min' && v <= lo) return null;
+  if (side === 'max' && v >= hi) return null;
+  return sliderToLog(v, lo, hi);
+}
+
 function readFilters() {
   const val = e => Number(e.value);
   return {
@@ -73,20 +80,24 @@ function readFilters() {
     maxLen: val(fMaxLen) >= Number(fMaxLen.max) ? null : val(fMaxLen),
     minOcc: val(fMinOcc) <= Number(fMinOcc.min) ? null : val(fMinOcc),
     maxOcc: val(fMaxOcc) >= Number(fMaxOcc.max) ? null : val(fMaxOcc),
-    minRank: val(fMinRank) <= Number(fMinRank.min) ? null : val(fMinRank),
-    maxRank: val(fMaxRank) >= Number(fMaxRank.max) ? null : val(fMaxRank),
+    minRank: rankFromSlider(fMinRank, 'min'),
+    maxRank: rankFromSlider(fMaxRank, 'max'),
   };
 }
 
+// Only groups the user has manually moved are remembered (see _moreTouched in
+// primer.js — same pattern). Kana checkboxes always persist: toggling them is
+// itself the explicit user action.
+let _touched = new Set(); // 'maxNew' | 'len' | 'occ' | 'rank'
+function touchQuiz(g) { _touched.add(g); quizFiltersBtn.classList.add('btn--active'); }
+
 function saveFilters() {
-  try {
-    localStorage.setItem(FILTER_KEY, JSON.stringify({
-      maxNew: fMaxNew.value, minLen: fMinLen.value, maxLen: fMaxLen.value,
-      minOcc: fMinOcc.value, maxOcc: fMaxOcc.value,
-      minRank: fMinRank.value, maxRank: fMaxRank.value,
-      hideHira: hideHiraganaCheckbox.checked, hideKata: hideKatakanaCheckbox.checked,
-    }));
-  } catch { /* storage unavailable */ }
+  const data = { touched: [..._touched], hideHira: hideHiraganaCheckbox.checked, hideKata: hideKatakanaCheckbox.checked };
+  if (_touched.has('maxNew')) data.maxNew = fMaxNew.value;
+  if (_touched.has('len')) { data.minLen = fMinLen.value; data.maxLen = fMaxLen.value; }
+  if (_touched.has('occ')) { data.minOcc = fMinOcc.value; data.maxOcc = fMaxOcc.value; }
+  if (_touched.has('rank')) { data.minRank = fMinRank.value; data.maxRank = fMaxRank.value; }
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
 }
 
 // --- Pool ---
@@ -129,7 +140,13 @@ function updateLabels() {
   valMaxNew.textContent = labelSingle(fMaxNew);
   valLen.textContent = labelPair(fMinLen, fMaxLen);
   valOcc.textContent = labelPair(fMinOcc, fMaxOcc);
-  valRank.textContent = labelPair(fMinRank, fMaxRank);
+  valRank.textContent = labelPair(fMinRank, fMaxRank, fmtRankSlider);
+}
+
+// Display a rank-slider coordinate as its log-scaled rank.
+function fmtRankSlider(v) {
+  const r = sliderToLog(v, Number(fMinRank.min), Number(fMaxRank.max));
+  return r <= 0 ? '0' : r.toLocaleString();
 }
 
 function setupFilters() {
@@ -142,15 +159,18 @@ function setupFilters() {
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(FILTER_KEY)); } catch { /* ignore */ }
+  const touched = new Set(saved?.touched || []);
+  _touched = touched;
   const within = (v, lo, hi) => v != null && v >= lo && v <= hi;
+  const pick = (group, key, fallback, lo, hi) => (touched.has(group) && within(+saved[key], lo, hi) ? +saved[key] : fallback);
 
-  const maxNewV = within(saved?.maxNew, 1, maxNew) ? Number(saved.maxNew) : maxNew;
-  const minLenV = within(saved?.minLen, lenMin, lenMax) ? Number(saved.minLen) : lenMin;
-  const maxLenV = within(saved?.maxLen, lenMin, lenMax) ? Number(saved.maxLen) : lenMax;
-  const minOccV = within(saved?.minOcc, 1, maxOcc) ? Number(saved.minOcc) : 1;
-  const maxOccV = within(saved?.maxOcc, 1, maxOcc) ? Number(saved.maxOcc) : maxOcc;
-  const minRankV = within(saved?.minRank, 0, rankMax) ? Number(saved.minRank) : 0;
-  const maxRankV = within(saved?.maxRank, 0, rankMax) ? Number(saved.maxRank) : rankMax;
+  const maxNewV = pick('maxNew', 'maxNew', maxNew, 1, maxNew);
+  const minLenV = pick('len', 'minLen', lenMin, lenMin, lenMax);
+  const maxLenV = pick('len', 'maxLen', lenMax, lenMin, lenMax);
+  const minOccV = pick('occ', 'minOcc', 1, 1, maxOcc);
+  const maxOccV = pick('occ', 'maxOcc', maxOcc, 1, maxOcc);
+  const minRankV = pick('rank', 'minRank', 0, 0, rankMax);
+  const maxRankV = pick('rank', 'maxRank', rankMax, 0, rankMax);
 
   setRange(fMaxNew, 1, maxNew, maxNewV);
   setRange(fMinLen, lenMin, lenMax, minLenV);
@@ -162,6 +182,7 @@ function setupFilters() {
   hideHiraganaCheckbox.checked = !!saved?.hideHira;
   hideKatakanaCheckbox.checked = !!saved?.hideKata;
   document.getElementById('rankBlock').classList.toggle('hidden', !getDictMap());
+  quizFiltersBtn.classList.toggle('btn--active', _touched.size > 0);
 
   updateLabels();
   fillSingle(fMaxNew, fillMaxNew);
@@ -172,12 +193,13 @@ function setupFilters() {
 
 function rebuild() { buildPool(); startQuiz(); }
 
-function wireDual(minEl, maxEl, fillEl) {
+function wireDual(minEl, maxEl, fillEl, group) {
   const apply = () => {
     if (Number(minEl.value) > Number(maxEl.value)) {
       if (document.activeElement === minEl) maxEl.value = minEl.value;
       else minEl.value = maxEl.value;
     }
+    touchQuiz(group);
     fillDual(minEl, maxEl, fillEl);
     updateLabels();
     saveFilters();
@@ -188,10 +210,10 @@ function wireDual(minEl, maxEl, fillEl) {
 }
 
 function wireFilters() {
-  fMaxNew.addEventListener('input', () => { fillSingle(fMaxNew, fillMaxNew); updateLabels(); saveFilters(); rebuild(); });
-  wireDual(fMinLen, fMaxLen, fillLen);
-  wireDual(fMinOcc, fMaxOcc, fillOcc);
-  wireDual(fMinRank, fMaxRank, fillRank);
+  fMaxNew.addEventListener('input', () => { touchQuiz('maxNew'); fillSingle(fMaxNew, fillMaxNew); updateLabels(); saveFilters(); rebuild(); });
+  wireDual(fMinLen, fMaxLen, fillLen, 'len');
+  wireDual(fMinOcc, fMaxOcc, fillOcc, 'occ');
+  wireDual(fMinRank, fMaxRank, fillRank, 'rank');
   for (const el of [hideHiraganaCheckbox, hideKatakanaCheckbox]) {
     el.addEventListener('change', () => { saveFilters(); rebuild(); });
   }
@@ -199,6 +221,7 @@ function wireFilters() {
   filtersPanel.querySelector('.quiz-filters-close').addEventListener('click', () => filtersPanel.classList.add('hidden'));
   filtersPanel.querySelector('.quiz-filters-backdrop').addEventListener('click', () => filtersPanel.classList.add('hidden'));
   document.getElementById('quizFiltersReset').addEventListener('click', () => {
+    _touched.clear();
     localStorage.removeItem(FILTER_KEY);
     setupFilters();
     rebuild();

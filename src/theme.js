@@ -4,6 +4,7 @@
 
 export const THEMES = [
   { id: 'light', label: 'Light' },
+  { id: 'red', label: 'Red' },
   { id: 'dark', label: 'Dark' },
   { id: 'nord', label: 'Nord' },
   { id: 'sepia', label: 'Sepia' },
