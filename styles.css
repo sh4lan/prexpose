@@ -6,29 +6,31 @@
   padding: 0;
 }
 
+/* Light is the default (no class on <html>). Single accent: a toned-down
+   steel blue; the neutrals are cool gray to sit with it. Bg stays pure white. */
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
-  --border: #e5e5e5;
+  --border: #e3e7eb;
   --text: #1a1a1a;
-  --text-muted: #999999;
-  --primary: #dd455b;
-  --primary-hover: #5a6ba0;
-  --primary-alt: #3799ff;
+  --text-muted: #8b94a3;
+  --primary: #4a7ba6;
+  --primary-hover: #3d6890;
+  --primary-alt: #4a7ba6;
   --danger: #c45353;
   --danger-hover: #b04444;
-  --drop-bg: #f5f5f5;
-  --added-bg: #f0f0f0;
-  --added-hover: #e8e8e8;
-  --flagged-bg: #eef1f8;
-  --flagged-hover: #e2e7f1;
+  --drop-bg: #f4f6f9;
+  --added-bg: #eef1f5;
+  --added-hover: #e4e9ef;
+  --flagged-bg: #edf3f8;
+  --flagged-hover: #e1eaf2;
   --btn-text: #fff;
   --radius: 12px;
   --radius-sm: 8px;
-  --chart-line: #6b7db3;
-  --chart-area: rgba(107, 125, 179, 0.12);
-  --chart-grid: #e5e5e5;
-  --chart-axis: #999999;
+  --chart-line: #4a7ba6;
+  --chart-area: rgba(74, 123, 166, 0.12);
+  --chart-grid: #e3e7eb;
+  --chart-axis: #8b94a3;
 }
 
 .red {
