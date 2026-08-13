@@ -1,15 +1,14 @@
 import {
   getKnownWords, getKnownSet, getCurrentAllWords, getCurrentFreq,
-  getHideHiragana, getHideKatakana,
-  setCurrentAllWords, setCurrentFreq, setOriginalText, setHideHiragana, setHideKatakana,
+  getHideHiragana, getHideKatakana, getHideKnown,
+  setCurrentAllWords, setCurrentFreq, setOriginalText, setHideHiragana, setHideKatakana, setHideKnown,
   setSkipSessionSave, setVarMap,
   dbPut, dbGet, addKnownWord, removeKnownWord, getTokenizer,
   CONTENT_POS, isHiraganaOnly, isKatakanaOnly, isKanaOnly, downloadTextFile,
-  saveSession, findSentences, findSentenceContext
+  mergeSplitNouns, getNames, saveSession, findSentences, findSentenceContext
 } from './state.js';
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
-import { buildQuizData } from './quizdata.js';
 import { setRange, fillDual, fillSingle, labelSingle, labelPair, sliderToLog } from './ranges.js';
 
 const PASTE_KEY = 'primerPasteText';
@@ -18,12 +17,12 @@ const PASTE_KEY = 'primerPasteText';
 const pasteTextarea = document.getElementById('pasteTextarea');
 const extractBtn = document.getElementById('extractBtn');
 const uploadBtn = document.getElementById('uploadBtn');
-const quizBtn = document.getElementById('quizBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const pasteStatus = document.getElementById('pasteStatus');
 const sortSelectBtn = document.getElementById('sortSelectBtn');
 const sortSelectMenu = document.getElementById('sortSelectMenu');
 let _sortValue = 'count';
+const hideKnownCheckbox = document.getElementById('hideKnownCheckbox');
 const hideHiraganaCheckbox = document.getElementById('hideHiraganaCheckbox');
 const hideKatakanaCheckbox = document.getElementById('hideKatakanaCheckbox');
 const wordSection = document.getElementById('wordSection');
@@ -104,9 +103,13 @@ export function updatePrimerUI() {
   emptyState.classList.toggle('hidden', hasWords);
   const msg = emptyState.querySelector('p');
   if (!hasWords && getCurrentAllWords().length > 0) {
-    msg.textContent = 'All words are already in your known list or excluded by the current filter.';
+    msg.textContent = getHideKnown()
+      ? 'All words are already in your known list or excluded by the current filter.'
+      : 'All words are excluded by the current filter.';
   } else {
-    msg.textContent = 'No new words to show. Paste some text above to get started.';
+    msg.textContent = getHideKnown()
+      ? 'No new words to show. Paste some text above to get started.'
+      : 'No words to show. Paste some text above to get started.';
   }
   updateNewPercent();
 }
@@ -122,7 +125,7 @@ function isFilteredOut(word) {
 }
 
 // --- Word-list filters (occurrences / dictionary rank) ---
-// Kept in sync with the quiz-style slider UI; applies in the same three places
+// Applies in the same three places
 // as the kana filters: applyFilters, updateNewPercent, and getVisible.
 const LIST_FILTER_KEY = 'primerListFilters';
 let _listFilters = { minOcc: null, maxOcc: null, minRank: null, maxRank: null };
@@ -178,7 +181,7 @@ function updateListLabels() {
 }
 
 // (Re)range the sliders to the current extraction + dict. Saved values are
-// re-clamped to the new range, same as the quiz filters.
+// re-clamped to the new range.
 function setupListFilters() {
   const freq = getCurrentFreq();
   const maxOcc = Math.max(...freq.map(e => e.count), 1);
@@ -261,7 +264,7 @@ export function renderDictUI() {
 }
 
 // --- Extract ---
-export async function extractFromPaste(text) {
+export async function extractFromPaste(text, sourceName) {
   text = text.replace(/^﻿/, '').trim();
   if (!text) { pasteStatus.textContent = 'No text to process.'; return; }
 
@@ -269,7 +272,7 @@ export async function extractFromPaste(text) {
   pasteStatus.textContent = 'Tokenizing...';
 
   try {
-    const tokenizer = await getTokenizer();
+    const [tokenizer, hasName] = await Promise.all([getTokenizer(), getNames()]);
     const lines = text.split('\n');
     const wordMap = new Map();
     const varMap = new Map();
@@ -277,7 +280,7 @@ export async function extractFromPaste(text) {
 
     for (let i = 0; i < lines.length; i += 20) {
       const chunk = lines.slice(i, i + 20).join('\n');
-      const tokens = tokenizer.tokenize(chunk);
+      const tokens = mergeSplitNouns(tokenizer.tokenize(chunk), hasName);
       totalTokens += tokens.length;
       for (const t of tokens) {
         if (!CONTENT_POS.has(t.pos)) continue;
@@ -299,7 +302,6 @@ export async function extractFromPaste(text) {
 
     if (!entries.length) {
       pasteStatus.textContent = 'No words could be extracted.';
-      if (quizBtn) quizBtn.classList.add('hidden');
       return;
     }
 
@@ -307,29 +309,12 @@ export async function extractFromPaste(text) {
     setCurrentFreq(entries);
     setVarMap(varMap);
 
-    // Persist the extraction for the quiz page (separate page, no shared memory).
-    sessionStorage.setItem('primerQuizData', JSON.stringify({ words: entries.map(e => e.word), freq: entries, text }));
-
-    // Build the quiz cache in the background so quiz.html opens instantly.
-    // Idle yields control back to the UI while tokenizing.
-    buildQuizData({ text, freq: entries }).then(cache => {
-      try {
-        sessionStorage.setItem('primerQuizCache', JSON.stringify({
-          sentences: cache.sentences,
-          sentenceWords: cache.sentenceWords,
-          sentenceLen: cache.sentenceLen,
-          byWord: [...cache.byWord.entries()],
-        }));
-      } catch { /* storage full — quiz will build on open */ }
-    }).catch(() => {});
-
     // Save session for sentence lookup (all extracted words, not just new)
-    saveSession(text, wordMap, varMap).catch(() => {});
+    saveSession(text, wordMap, varMap, sourceName).catch(() => {});
 
     setupListFilters();
     applyFilters();
     pasteStatus.textContent = `Extracted ${entries.length} unique words (${totalTokens} total).`;
-    if (quizBtn) quizBtn.classList.remove('hidden');
     downloadBtn.classList.remove('hidden');
 
     dbPut('lastText', text).catch(() => {});
@@ -365,7 +350,8 @@ function extractTextFromFile(file, text) {
 
 // --- Filter ---
 export function applyFilters(sortOverride) {
-  let entries = getCurrentFreq().slice().filter(e => !getKnownSet().has(e.word));
+  let entries = getCurrentFreq().slice();
+  if (getHideKnown()) entries = entries.filter(e => !getKnownSet().has(e.word));
   if (getHideHiragana() || getHideKatakana()) entries = entries.filter(e => !isFilteredOut(e.word));
   entries = entries.filter(e => !listRangeOut(e));
 
@@ -619,12 +605,12 @@ function renderSentenceList(list) {
 }
 
 async function countSentenceWords(texts) {
-  const tokenizer = await getTokenizer();
+  const [tokenizer, hasName] = await Promise.all([getTokenizer(), getNames()]);
   for (let i = 0; i < texts.length; i++) {
     const text = texts[i];
     if (_sentWords.has(text)) continue;
     const words = [];
-    for (const tok of tokenizer.tokenize(text)) {
+    for (const tok of mergeSplitNouns(tokenizer.tokenize(text), hasName)) {
       if (!CONTENT_POS.has(tok.pos)) continue;
       const w = (tok.pos === '動詞' || tok.pos === '形容詞')
         ? (tok.basic_form || tok.surface_form).trim()
@@ -741,10 +727,11 @@ export function openDownloadModal() { downloadModal.classList.remove('hidden'); 
 function closeDownloadModal() { downloadModal.classList.add('hidden'); }
 
 function getVisible() {
-  return getCurrentFreq()
-    .filter(e => !getKnownSet().has(e.word))
-    .filter(e => !isFilteredOut(e.word))
-    .filter(e => !listRangeOut(e));
+  let e = getCurrentFreq()
+    .filter(ee => !isFilteredOut(ee.word))
+    .filter(ee => !listRangeOut(ee));
+  if (getHideKnown()) e = e.filter(ee => !getKnownSet().has(ee.word));
+  return e;
 }
 function downloadWeighted() {
   const e = getVisible(); const l = [];
@@ -812,6 +799,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !sortSelectMenu.classList.contains('hidden')) setSortMenu(false);
 });
 
+hideKnownCheckbox.addEventListener('change', () => { setHideKnown(hideKnownCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
 hideHiraganaCheckbox.addEventListener('change', () => { setHideHiragana(hideHiraganaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
 hideKatakanaCheckbox.addEventListener('change', () => { setHideKatakana(hideKatakanaCheckbox.checked); if (getCurrentAllWords().length) applyFilters(); });
 downloadBtn.addEventListener('click', openDownloadModal);
@@ -845,7 +833,7 @@ function handleUploadFile(file) {
     sessionStorage.setItem(PASTE_KEY, text);
     uploadModalStatus.textContent = `Loaded "${file.name}" (${text.split('\n').length} lines).`;
     closeUploadModal();
-    extractFromPaste(text);
+    extractFromPaste(text, file.name);
   };
   reader.readAsText(file, 'UTF-8');
 }
@@ -874,6 +862,7 @@ document.addEventListener('keydown', (e) => {
 
 // --- Init ---
 export function initPrimer() {
+  hideKnownCheckbox.checked = getHideKnown();
   hideHiraganaCheckbox.checked = getHideHiragana();
   hideKatakanaCheckbox.checked = getHideKatakana();
   wireMoreFilters();

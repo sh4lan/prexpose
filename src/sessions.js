@@ -28,13 +28,36 @@ function formatRelTime(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// Label for a session row: the uploaded file name, or the first words of the
+// pasted text. Old sessions without a stored source fall back to the text.
+function sourceLabel(session) {
+  if (session.source) {
+    const n = session.source.trim();
+    if (n) return n.length > 40 ? n.slice(0, 40) + '…' : n;
+  }
+  const first = (session.sentences && session.sentences[0]) || '';
+  const s = first.trim();
+  if (!s) return '(pasted text)';
+  return s.length > 24 ? s.slice(0, 24) + '…' : s;
+}
+
 function renderRow(session) {
   const item = document.createElement('div');
   item.className = 'word-item';
 
-  const textSpan = document.createElement('span');
-  textSpan.className = 'word-text';
-  textSpan.textContent = `${sessionCharCount(session).toLocaleString()} chars · ${session.knownAdded} known`;
+  const labelWrap = document.createElement('span');
+  labelWrap.className = 'session-label';
+
+  const title = document.createElement('span');
+  title.className = 'word-text';
+  title.textContent = sourceLabel(session);
+
+  const sub = document.createElement('span');
+  sub.className = 'session-sub';
+  sub.textContent = `${sessionCharCount(session).toLocaleString()} chars · ${session.knownAdded} known`;
+
+  labelWrap.appendChild(title);
+  labelWrap.appendChild(sub);
 
   const dateSpan = document.createElement('span');
   dateSpan.className = 'word-date';
@@ -66,7 +89,7 @@ function renderRow(session) {
   actions.appendChild(restoreBtn);
   actions.appendChild(delBtn);
 
-  item.appendChild(textSpan);
+  item.appendChild(labelWrap);
   item.appendChild(actions);
   return item;
 }

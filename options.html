@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-  <script>(function(){var t=localStorage.getItem('primerTheme');if(t&&t!=='light')document.documentElement.classList.add(t)})()</script>
+  <script>(function(){var t=localStorage.getItem('primerTheme');if(t!=='light')document.documentElement.classList.add(t||'red')})()</script>
 </head>
 <body>
   <div class="app">
@@ -45,6 +45,23 @@
         <button id="exportBtn" class="btn btn-secondary">Export Words</button>
       </div>
       <input type="file" id="libraryFileInput" accept=".txt" hidden>
+    </section>
+
+    <section class="options-section">
+      <h3 class="options-title">Credits &amp; licenses</h3>
+      <p class="stat options-hint">
+        Personal-name recognition (<code>names.txt</code>) is derived from
+        <a href="https://www.edrdg.org/jmdict/" target="_blank" rel="noopener">JMnedict</a>,
+        &copy; Electronic Dictionary Research and Development Group (EDRDG),
+        licensed under
+        <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>.
+      </p>
+      <p class="stat options-hint">
+        Tokenization: <a href="https://github.com/takuyaa/kuromoji.js" target="_blank" rel="noopener">kuromoji.js</a>
+        (Apache License 2.0) with the
+        <a href="https://taku910.github.io/mecab/" target="_blank" rel="noopener">IPADIC</a>
+        dictionary (&copy; Nara Institute of Science and Technology, BSD-3-Clause).
+      </p>
     </section>
   </div>
 

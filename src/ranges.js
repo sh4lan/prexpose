@@ -1,6 +1,5 @@
-// Range-slider helpers shared by quiz.js (quiz filters) and primer.js
-// (word-context filters). Both views build dual/single range sliders with a
-// filled track; keep these here so the two never drift.
+// Range-slider helpers for the word-context and word-list filter popups.
+// They build dual/single range sliders with a filled track.
 
 export function setRange(input, min, max, value) {
   input.min = min;

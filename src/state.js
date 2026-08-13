@@ -53,6 +53,7 @@ let _originalText = '';
 let _sortMode = 'count';
 let _hideHiragana = localStorage.getItem('primerHideHiragana') === 'true';
 let _hideKatakana = localStorage.getItem('primerHideKatakana') === 'true';
+let _hideKnown = localStorage.getItem('primerHideKnown') !== 'false'; // default: hide known
 // One-time migration from the old combined "hide kana-only" toggle.
 if (localStorage.getItem('primerHideKana') === 'true') {
   _hideHiragana = _hideKatakana = true;
@@ -74,6 +75,7 @@ export function getOriginalText() { return _originalText; }
 export function getSortMode() { return _sortMode; }
 export function getHideHiragana() { return _hideHiragana; }
 export function getHideKatakana() { return _hideKatakana; }
+export function getHideKnown() { return _hideKnown; }
 
 export function setCurrentAllWords(v) { _currentAllWords = v; }
 export function setCurrentFreq(v) { _currentFreq = v; }
@@ -81,6 +83,7 @@ export function setOriginalText(v) { _originalText = v; }
 export function setSortMode(v) { _sortMode = v; }
 export function setHideHiragana(v) { _hideHiragana = v; localStorage.setItem('primerHideHiragana', v); }
 export function setHideKatakana(v) { _hideKatakana = v; localStorage.setItem('primerHideKatakana', v); }
+export function setHideKnown(v) { _hideKnown = v; localStorage.setItem('primerHideKnown', v); }
 export function getVarMap() { return _varMap; }
 export function setVarMap(v) { _varMap = v; }
 export function getSkipSessionSave() { return _skipSessionSave; }
@@ -90,6 +93,80 @@ export const CONTENT_POS = new Set([
   '名詞', '動詞', '形容詞', '副詞', '連体詞',
   '感動詞', '接頭詞'
 ]);
+
+const allKanji = s => /^[㐀-䶿一-鿿豈-﫿]+$/.test(s);
+
+// --- Personal-name list (JMnedict, one surface per line) ---
+// Single shared promise so concurrent callers (e.g. a page-load warmup racing
+// the first extract) get the same in-flight load instead of a premature null.
+let _namesPromise = null;
+export function getNames() {
+  if (!_namesPromise) {
+    _namesPromise = (async () => {
+      try {
+        const res = await fetch('names.txt');
+        if (!res.ok) throw new Error('names.txt ' + res.status);
+        // Bucket names by first character so each lookup scans a tiny slice
+        // instead of the whole 2.9MB list (a Set of 340k strings is ~26MB).
+        const buckets = new Map();
+        for (const line of (await res.text()).split('\n')) {
+          const n = line.trim();
+          if (!n || n.startsWith('#')) continue; // header comments, one name per line
+          const arr = buckets.get(n[0]);
+          if (arr) arr.push(n); else buckets.set(n[0], [n]);
+        }
+        const joined = new Map();
+        for (const [c, arr] of buckets) joined.set(c, '\n' + arr.join('\n') + '\n');
+        return name => {
+          const b = joined.get(name[0]);
+          return b ? b.includes('\n' + name + '\n') : false;
+        };
+      } catch (err) {
+        console.warn('Personal-name list unavailable; name merging disabled.', err);
+        return null;
+      }
+    })();
+  }
+  return _namesPromise;
+}
+
+// Content POS that can be part of a split proper noun. kuromoji tags some name
+// kanji as verbs or prefixes (小 + 依 → 小依, where 依 is the verb reading 依る),
+// so merging only 名詞 runs misses names like 小依.
+const NAME_PARTS = new Set(['名詞', '動詞', '接頭詞', '形容詞']);
+
+// kuromoji's IPADIC splits proper nouns it doesn't know into their kanji parts
+// (乃愛 → 乃 + 愛, 山田太郎 → 山田 + 太郎), so runs of consecutive pure-kanji
+// content tokens are merged back into one — but only when the run is actually a
+// known personal name (via getNames), so phrases like 今日午後 are left alone.
+export function mergeSplitNouns(tokens, hasName) {
+  if (!hasName) return tokens;
+  const out = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (NAME_PARTS.has(t.pos) && allKanji(t.surface_form)) {
+      let run = t.surface_form;
+      let best = -1;
+      let j = i + 1;
+      while (j < tokens.length && NAME_PARTS.has(tokens[j].pos) && allKanji(tokens[j].surface_form)) {
+        run += tokens[j].surface_form;
+        if (hasName(run)) best = j;
+        j++;
+      }
+      if (best > i) {
+        let surf = '';
+        for (let k = i; k <= best; k++) surf += tokens[k].surface_form;
+        out.push({ ...t, pos: '名詞', surface_form: surf }); // a name is a noun
+        i = best + 1;
+        continue;
+      }
+    }
+    out.push(t);
+    i++;
+  }
+  return out;
+}
 
 // --- Theme ---
 export { getTheme, setTheme } from './theme.js';
@@ -236,7 +313,7 @@ export function splitSentences(text) {
   return text.split(/。|！|？|\.\s|\!\s|\?\s|\n/).map(s => s.trim()).filter(s => s.length > 0).map(s => s.replace(/[…。\.]+$/, ''));
 }
 
-export async function saveSession(text, wordMap, varMap) {
+export async function saveSession(text, wordMap, varMap, sourceName) {
   if (_skipSessionSave) { _skipSessionSave = false; return null; }
   const now = Date.now();
   const sessionId = now.toString(36) + Math.random().toString(36).slice(2, 4);
@@ -260,7 +337,7 @@ export async function saveSession(text, wordMap, varMap) {
     if (indices.length) wordIndices[word] = indices;
   }
 
-  const data = { sentences: sents, wordIndices, ts: now, charCount, words: [...wordMap.keys()] };
+  const data = { sentences: sents, wordIndices, ts: now, charCount, words: [...wordMap.keys()], source: sourceName || null };
   await dbPut('session:' + sessionId, data);
   // Keep a list of session IDs
   const list = await dbGet('sessionList') || [];

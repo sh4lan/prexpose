@@ -1,6 +1,7 @@
 // Theme system: a set of named themes, each mapping to a class on <html> that
-// overrides the CSS variables in styles.css. 'light' is the no-class default.
-// Theme state lives in localStorage['primerTheme'].
+// overrides the CSS variables in styles.css. 'light' is the no-class theme;
+// 'red' is the default when nothing is stored. Theme state lives in
+// localStorage['primerTheme'].
 
 export const THEMES = [
   { id: 'light', label: 'Light' },
@@ -14,7 +15,7 @@ const CLASSES = THEMES.filter(t => t.id !== 'light').map(t => t.id);
 
 export function getTheme() {
   const t = localStorage.getItem('primerTheme');
-  return THEMES.some(x => x.id === t) ? t : 'light';
+  return THEMES.some(x => x.id === t) ? t : 'red';
 }
 
 export function applyTheme(id) {

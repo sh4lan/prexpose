@@ -425,6 +425,14 @@ body {
   flex-wrap: wrap;
 }
 
+.options-hint a {
+  color: var(--primary-alt);
+}
+
+.options-hint code {
+  font-size: 0.85em;
+}
+
 /* --- Stats view --- */
 .kpi-row {
   display: flex;
@@ -818,6 +826,20 @@ body {
   font-size: 0.8rem;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* Session row: source label (file name / first words) above a stats line */
+.session-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.session-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Empty State */
