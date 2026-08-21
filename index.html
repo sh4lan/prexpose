@@ -26,7 +26,8 @@
     <section class="paste-section">
       <textarea id="pasteTextarea" class="paste-area" placeholder="Paste here..."></textarea>
       <div class="paste-buttons">
-        <button id="extractBtn" class="btn btn-add">Extract Words</button>
+        <button id="extractBtn" class="btn btn-add">Extract</button>
+        <button id="partialBtn" class="btn btn-secondary hidden">Partial</button>
         <button id="uploadBtn" class="btn btn-secondary">Upload</button>
         <button id="downloadBtn" class="btn btn-secondary hidden">Download</button>
         <span id="pasteStatus" class="stat" style="margin-left:0.5rem"></span>
@@ -82,6 +83,44 @@
           </div>
           <input type="file" id="uploadModalInput" hidden>
           <div id="uploadModalStatus" class="stat" style="margin-top:0.5rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Partial Extract Modal (structured sources: subtitles by time, mokuro by page) -->
+    <div id="partialModal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content quiz-filters-card">
+        <div class="modal-header">
+          <h3>Partial Extract</h3>
+          <span id="partialFormatLabel" class="stat" style="margin-left:0.4rem;"></span>
+          <span class="bar-spacer"></span>
+          <button class="modal-close btn btn-text">&times;</button>
+        </div>
+        <div class="modal-body quiz-filters-body">
+          <div class="quiz-filter-block" id="partialTimeBlock">
+            <div class="quiz-filter-label">Time range <span class="quiz-filter-val" id="partialValTime"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="partialFillTime"></div></div>
+              <input type="range" id="partialRngMinTime" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="partialRngMaxTime" class="dual-range-input dual-range-max" step="1">
+            </div>
+            <div class="dual-ruler" id="partialRuler"></div>
+          </div>
+          <div class="quiz-filter-block hidden" id="partialPageBlock">
+            <div class="quiz-filter-label">Page range <span class="quiz-filter-val" id="partialValPage"></span></div>
+            <div class="dual-range">
+              <div class="dual-range-track"><div class="dual-range-fill" id="partialFillPage"></div></div>
+              <input type="range" id="partialRngMinPage" class="dual-range-input dual-range-min" step="1">
+              <input type="range" id="partialRngMaxPage" class="dual-range-input dual-range-max" step="1">
+            </div>
+          </div>
+          <div id="partialPreview" class="partial-preview"></div>
+          <div class="partial-foot">
+            <span id="partialCount" class="stat"></span>
+            <span class="bar-spacer"></span>
+            <button id="partialExtractBtn" class="btn btn-add">Extract</button>
+          </div>
         </div>
       </div>
     </div>

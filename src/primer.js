@@ -10,6 +10,7 @@ import {
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
 import { setRange, fillDual, fillSingle, labelSingle, labelPair, sliderToLog } from './ranges.js';
+import { detectSource, selectedText, selectedUnits } from './partial.js';
 
 const PASTE_KEY = 'primerPasteText';
 
@@ -53,6 +54,25 @@ const contextSentences = document.getElementById('contextSentences');
 const contextWordOcc = document.getElementById('contextWordOcc');
 const contextWordRank = document.getElementById('contextWordRank');
 const downloadModal = document.getElementById('downloadModal');
+
+// Partial extract (structured sources: subtitles by time, mokuro by page)
+const partialBtn = document.getElementById('partialBtn');
+const partialModal = document.getElementById('partialModal');
+const partialFormatLabel = document.getElementById('partialFormatLabel');
+const partialTimeBlock = document.getElementById('partialTimeBlock');
+const partialPageBlock = document.getElementById('partialPageBlock');
+const partialRngMinTime = document.getElementById('partialRngMinTime');
+const partialRngMaxTime = document.getElementById('partialRngMaxTime');
+const partialRngMinPage = document.getElementById('partialRngMinPage');
+const partialRngMaxPage = document.getElementById('partialRngMaxPage');
+const partialFillTime = document.getElementById('partialFillTime');
+const partialFillPage = document.getElementById('partialFillPage');
+const partialValTime = document.getElementById('partialValTime');
+const partialValPage = document.getElementById('partialValPage');
+const partialPreview = document.getElementById('partialPreview');
+const partialCount = document.getElementById('partialCount');
+const partialExtractBtn = document.getElementById('partialExtractBtn');
+const partialRuler = document.getElementById('partialRuler');
 
 // Word-context (More) filters + context sub-view
 const moreFiltersPanel = document.getElementById('moreFiltersPanel');
@@ -754,12 +774,245 @@ function downloadCSV() {
   downloadTextFile(BOM + rows.join('\n'), 'words-with-sentences.csv'); closeDownloadModal();
 }
 
+// --- Partial extract (structured sources: subtitles by time, mokuro by page) ---
+// The source is the raw content of the last recognized upload, else the pasted
+// textarea value. Editing the textarea drops the stored upload source.
+let _partialSource = null;
+let _partialSourceName = null;
+let _partialModalSource = null; // source being edited in the open modal
+
+function getPartialSource() {
+  if (_partialSource) return _partialSource;
+  return detectSource(pasteTextarea.value);
+}
+
+function updatePartialVisibility() {
+  partialBtn.classList.toggle('hidden', !getPartialSource());
+}
+
+function fmtTime(sec) {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const p = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`;
+}
+
+// Dense time ruler under the time slider: minor ticks plus a few readable
+// major labels (e.g. every 5 min for a 24 min episode).
+function renderPartialRuler(total) {
+  partialRuler.innerHTML = '';
+  if (!(total > 0)) return;
+  const majors = [60, 120, 300, 600, 900, 1800, 3600];
+  let major = majors[0];
+  for (const s of majors) { if (s * 6 >= total) { major = s; break; } }
+  const minor = Math.max(10, Math.round(major / 5));
+  const frag = document.createDocumentFragment();
+  for (let t = minor; t < total; t += minor) {
+    const m = document.createElement('span');
+    m.className = 'dual-ruler-minor';
+    m.style.left = (t / total) * 100 + '%';
+    frag.appendChild(m);
+  }
+  for (let t = major; t < total; t += major) {
+    const s = document.createElement('span');
+    s.className = 'dual-ruler-major';
+    s.textContent = fmtTime(t);
+    s.style.left = (t / total) * 100 + '%';
+    frag.appendChild(s);
+  }
+  partialRuler.appendChild(frag);
+}
+
+function openPartialModal() {
+  const src = getPartialSource();
+  if (!src) return;
+  _partialModalSource = src;
+  const isSubs = src.kind === 'subs';
+  partialTimeBlock.classList.toggle('hidden', !isSubs);
+  partialPageBlock.classList.toggle('hidden', isSubs);
+  if (isSubs) {
+    const total = src.cues.reduce((m, c) => Math.max(m, c.end), 0);
+    setRange(partialRngMinTime, 0, total, 0);
+    setRange(partialRngMaxTime, 0, total, total);
+    partialFormatLabel.textContent = `${src.subtype.toUpperCase()} · ${src.cues.length} cues`;
+    renderPartialRuler(total);
+  } else {
+    const n = src.pages.length;
+    setRange(partialRngMinPage, 1, n, 1);
+    setRange(partialRngMaxPage, 1, n, n);
+    partialFormatLabel.textContent = src.subtype === 'mokuro_text' ? 'Mokuro text' : 'Mokuro';
+    renderPartialRuler(0);
+  }
+  updatePartialLabels();
+  fillPartial();
+  renderPartialPreview();
+  partialModal.classList.remove('hidden');
+}
+
+function closePartialModal() { partialModal.classList.add('hidden'); }
+
+function updatePartialLabels() {
+  partialValTime.textContent = labelPair(partialRngMinTime, partialRngMaxTime, fmtTime);
+  partialValPage.textContent = labelPair(partialRngMinPage, partialRngMaxPage);
+}
+
+function fillPartial() {
+  fillDual(partialRngMinTime, partialRngMaxTime, partialFillTime);
+  fillDual(partialRngMinPage, partialRngMaxPage, partialFillPage);
+}
+
+// Keep min <= max (the dragged thumb wins, like the filter popups).
+function partialRange(loEl, hiEl) {
+  if (Number(loEl.value) > Number(hiEl.value)) {
+    if (document.activeElement === loEl) hiEl.value = loEl.value;
+    else loEl.value = hiEl.value;
+  }
+  return [Number(loEl.value), Number(hiEl.value)];
+}
+
+// Preview shows what's at the cut boundaries (first + last selected unit) —
+// enough to verify where the cut lands without rendering the whole selection.
+function renderPartialPreview() {
+  const src = _partialModalSource;
+  if (!src) return;
+  const isSubs = src.kind === 'subs';
+  const [lo, hi] = isSubs ? partialRange(partialRngMinTime, partialRngMaxTime)
+                          : partialRange(partialRngMinPage, partialRngMaxPage);
+  const units = selectedUnits(src, lo, hi);
+
+  partialPreview.textContent = '';
+  if (!units.length) {
+    partialPreview.textContent = 'Nothing in this range.';
+    partialCount.textContent = '0 selected';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  const boundary = units.length === 1 ? [units[0]] : [units[0], units[units.length - 1]];
+  for (const u of boundary) {
+    if (isSubs) {
+      const d = document.createElement('div');
+      d.className = 'partial-cue';
+      const t = document.createElement('span');
+      t.className = 'partial-cue-time'; t.textContent = fmtTime(u.start);
+      const x = document.createElement('span');
+      x.className = 'partial-cue-text'; x.textContent = u.text;
+      d.appendChild(t); d.appendChild(x);
+      frag.appendChild(d);
+    } else {
+      const d = document.createElement('div');
+      d.className = 'partial-page';
+      const h = document.createElement('div');
+      h.className = 'partial-page-head'; h.textContent = `Page ${u.n}`;
+      const b = document.createElement('pre');
+      b.className = 'partial-page-text'; b.textContent = u.text;
+      d.appendChild(h); d.appendChild(b);
+      frag.appendChild(d);
+    }
+  }
+  if (units.length > 2) {
+    const note = document.createElement('div');
+    note.className = 'partial-note';
+    note.textContent = `… ${units.length - 2} more in between`;
+    frag.appendChild(note);
+  }
+  partialPreview.appendChild(frag);
+
+  const chars = units.reduce((m, u) => m + u.text.length, 0);
+  const unit = isSubs ? 'cue' : 'page';
+  partialCount.textContent = `${units.length} ${unit}${units.length === 1 ? '' : 's'} · ${chars.toLocaleString()} chars`;
+}
+
+function selectedPartialText() {
+  const src = _partialModalSource;
+  if (!src) return '';
+  const lo = src.kind === 'subs' ? Number(partialRngMinTime.value) : Number(partialRngMinPage.value);
+  const hi = src.kind === 'subs' ? Number(partialRngMaxTime.value) : Number(partialRngMaxPage.value);
+  return selectedText(src, lo, hi);
+}
+
+function wirePartial() {
+  partialBtn.addEventListener('click', openPartialModal);
+  partialModal.querySelector('.modal-backdrop').addEventListener('click', closePartialModal);
+  partialModal.querySelector('.modal-close').addEventListener('click', closePartialModal);
+  const wireRange = (minEl, maxEl) => {
+    const onInput = () => {
+      partialRange(minEl, maxEl);
+      updatePartialLabels();
+      fillPartial();
+      renderPartialPreview();
+    };
+    minEl.addEventListener('input', onInput);
+    maxEl.addEventListener('input', onInput);
+  };
+  wireRange(partialRngMinTime, partialRngMaxTime);
+  wireRange(partialRngMinPage, partialRngMaxPage);
+  partialExtractBtn.addEventListener('click', () => {
+    const text = selectedPartialText();
+    if (!text.trim()) { partialCount.textContent = 'Nothing selected in this range.'; return; }
+    extractFromPaste(text, _partialSourceName);
+    partialModal.classList.add('hidden');
+  });
+}
+
+// --- QoL: press the slider track to jump the nearest thumb there and keep
+// holding to scrub. Wired once for every .dual-range in the app; the thumbs
+// themselves still drag natively (their input is the pointer target).
+function wireTrackScrub() {
+  document.querySelectorAll('.dual-range').forEach(container => {
+    const els = [...container.querySelectorAll('input[type="range"]')];
+    if (!els.length) return;
+    const valueAt = (clientX) => {
+      const r = container.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      const lo = +els[0].min, hi = +els[0].max;
+      return Math.round(lo + frac * (hi - lo));
+    };
+    const nearest = (v) => els.reduce((a, b) =>
+      Math.abs(v - +a.value) <= Math.abs(v - +b.value) ? a : b);
+    const move = (el, clientX) => {
+      const v = valueAt(clientX);
+      el.value = Math.max(+el.min, Math.min(+el.max, v));
+      el.dispatchEvent(new Event('input'));
+    };
+    let active = null;
+    container.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('input[type="range"]')) return; // native thumb drag
+      e.preventDefault();
+      active = nearest(valueAt(e.clientX));
+      move(active, e.clientX);
+      container.setPointerCapture(e.pointerId);
+    });
+    container.addEventListener('pointermove', (e) => {
+      if (!active) return;
+      move(active, e.clientX);
+    });
+    const stop = (e) => {
+      if (!active) return;
+      active = null;
+      if (container.hasPointerCapture && container.hasPointerCapture(e.pointerId)) container.releasePointerCapture(e.pointerId);
+    };
+    container.addEventListener('pointerup', stop);
+    container.addEventListener('pointercancel', stop);
+  });
+}
+
 // --- Restore ---
 async function checkSavedText() {
   try { if (await dbGet('lastText') && hasSavedBadge) hasSavedBadge.classList.remove('hidden'); } catch {}
 }
 restoreBtn.addEventListener('click', async () => {
-  try { const s = await dbGet('lastText'); if (s) { pasteTextarea.value = s; pasteStatus.textContent = 'Restored last text.'; } } catch {}
+  try {
+    const s = await dbGet('lastText');
+    if (s) {
+      pasteTextarea.value = s;
+      pasteStatus.textContent = 'Restored last text.';
+      _partialSource = null;
+      updatePartialVisibility();
+    }
+  } catch {}
 });
 
 // --- Event handlers ---
@@ -827,13 +1080,19 @@ uploadModalInput.addEventListener('change', () => {
 function handleUploadFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
-    const text = extractTextFromFile(file, e.target.result);
+    const raw = e.target.result;
+    const text = extractTextFromFile(file, raw);
     if (!text.trim()) { uploadModalStatus.textContent = 'No text could be extracted.'; return; }
     pasteTextarea.value = text;
     sessionStorage.setItem(PASTE_KEY, text);
+    // Keep the raw file for Partial: uploads strip subtitle timestamps from
+    // the textarea, so the structured source lives here instead.
+    _partialSource = detectSource(raw, file.name);
+    _partialSourceName = _partialSource ? file.name : null;
     uploadModalStatus.textContent = `Loaded "${file.name}" (${text.split('\n').length} lines).`;
     closeUploadModal();
     extractFromPaste(text, file.name);
+    updatePartialVisibility();
   };
   reader.readAsText(file, 'UTF-8');
 }
@@ -852,6 +1111,7 @@ downloadModal.querySelectorAll('.download-option').forEach(opt => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!partialModal.classList.contains('hidden')) { closePartialModal(); return; }
     if (!listFiltersPanel.classList.contains('hidden')) { closeListFilters(); return; }
     if (!moreFiltersPanel.classList.contains('hidden')) { moreFiltersPanel.classList.add('hidden'); return; }
     if (!contextModal.classList.contains('hidden') && !moreContextPanel.classList.contains('hidden')) { showMoreList(); return; }
@@ -867,6 +1127,8 @@ export function initPrimer() {
   hideKatakanaCheckbox.checked = getHideKatakana();
   wireMoreFilters();
   wireListFilters();
+  wirePartial();
+  wireTrackScrub();
   setupListFilters();
   updatePrimerUI();
   checkSavedText();
@@ -877,10 +1139,14 @@ export function initPrimer() {
   // Restore paste text from sessionStorage
   const saved = sessionStorage.getItem(PASTE_KEY);
   if (saved) pasteTextarea.value = saved;
+  updatePartialVisibility();
 
-  // Auto-save paste text on input
+  // Auto-save paste text on input; the structured source is re-derived from
+  // the textarea once the user edits (upload raw no longer applies).
   pasteTextarea.addEventListener('input', () => {
     sessionStorage.setItem(PASTE_KEY, pasteTextarea.value);
+    _partialSource = null;
+    updatePartialVisibility();
   });
 
   // Auto-extract on restore from sessions

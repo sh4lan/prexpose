@@ -1337,7 +1337,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: var(--drop-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
@@ -1357,15 +1357,11 @@ body {
   gap: 0.5rem;
 }
 
-/* Value shown as a pill badge */
+/* Filter value, shown as plain text in the label row */
 .quiz-filter-val {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.12rem 0.6rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1373,8 +1369,9 @@ body {
 /* Dual-thumb range slider */
 .dual-range {
   position: relative;
-  height: 28px;
+  height: 32px;
   margin: 0.25rem 0 0.1rem;
+  touch-action: none;
 }
 
 .dual-range-track {
@@ -1382,10 +1379,10 @@ body {
   left: 6px;
   right: 6px;
   top: 50%;
-  height: 6px;
+  height: 3px;
   transform: translateY(-50%);
   background: var(--border);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .dual-range-fill {
@@ -1393,7 +1390,7 @@ body {
   top: 0;
   bottom: 0;
   background: var(--primary);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .dual-range-input {
@@ -1411,12 +1408,12 @@ body {
 .dual-range-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
+  width: 8px;
   height: 20px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid var(--surface);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   pointer-events: auto;
   transition: box-shadow 0.15s, transform 0.15s;
@@ -1424,16 +1421,16 @@ body {
 
 .dual-range-input::-webkit-slider-thumb:hover {
   transform: scale(1.08);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
 }
 
 .dual-range-input::-moz-range-thumb {
-  width: 20px;
+  width: 8px;
   height: 20px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid var(--surface);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -1444,6 +1441,119 @@ body {
 
 .dual-range-max {
   z-index: 2;
+}
+
+/* Time ruler under the Partial Extract time slider (dense major/minor ticks). */
+.dual-ruler {
+  position: relative;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.dual-ruler-major {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dual-ruler-minor {
+  position: absolute;
+  bottom: 2px;
+  width: 1px;
+  height: 5px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+
+/* Partial Extract modal: wider than the compact filter cards. */
+#partialModal .modal-content {
+  max-width: 680px;
+  width: 92%;
+}
+
+/* Partial-extract modal: boundary-context preview of the selected range.
+   Shows the first/last subtitle cue or page in the range, not the whole
+   selection, so the cut points can be verified cheaply. */
+.partial-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 0.6rem 0.75rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 0.9rem;
+}
+
+.partial-cue {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.3rem 0;
+}
+
+.partial-cue + .partial-cue {
+  border-top: 1px dashed var(--border);
+}
+
+.partial-cue-time {
+  flex: none;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.partial-cue-text {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.partial-page {
+  padding: 0.3rem 0;
+}
+
+.partial-page + .partial-page {
+  border-top: 1px dashed var(--border);
+}
+
+.partial-page-head {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.partial-page-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.partial-note {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.partial-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
 /* Filter button stays on the secondary accent when active (it's a text
