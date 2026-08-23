@@ -1366,6 +1366,35 @@ body {
   white-space: nowrap;
 }
 
+/* Manual page-range inputs in the partial modal (typed page numbers stay in
+   sync with the dual-range sliders) */
+.partial-page-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.partial-num-input {
+  width: 3.6rem;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.partial-num-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.partial-num-sep {
+  color: var(--text-muted);
+}
+
 /* Dual-thumb range slider */
 .dual-range {
   position: relative;
@@ -1477,16 +1506,37 @@ body {
 }
 
 /* Partial-extract modal: boundary-context preview of the selected range.
-   Shows the first/last subtitle cue or page in the range, not the whole
-   selection, so the cut points can be verified cheaply. */
+   Shows the first/last subtitle cue or page in the range in two labeled
+   boxes (Start / End), so the cut points can be verified cheaply. */
 .partial-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.partial-preview-box {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
   padding: 0.6rem 0.75rem;
-  max-height: 40vh;
+  /* Fixed height so the popup doesn't resize (and shake) as the boundary
+     pages change while dragging the slider; long pages scroll inside. */
+  height: 30vh;
   overflow-y: auto;
-  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.partial-preview-box--single {
+  grid-column: 1 / -1;
+}
+
+.partial-preview-box-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
 }
 
 .partial-cue {
@@ -1541,7 +1591,9 @@ body {
 }
 
 .partial-note {
-  margin-top: 0.4rem;
+  grid-column: 1 / -1;
+  min-height: 1.2rem;
+  line-height: 1.2rem;
   font-size: 0.8rem;
   color: var(--text-muted);
   text-align: center;

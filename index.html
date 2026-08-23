@@ -108,7 +108,13 @@
             <div class="dual-ruler" id="partialRuler"></div>
           </div>
           <div class="quiz-filter-block hidden" id="partialPageBlock">
-            <div class="quiz-filter-label">Page range <span class="quiz-filter-val" id="partialValPage"></span></div>
+            <div class="quiz-filter-label">Page range
+              <span class="partial-page-inputs">
+                <input type="number" id="partialPageMinInput" class="partial-num-input" min="1" step="1">
+                <span class="partial-num-sep">&mdash;</span>
+                <input type="number" id="partialPageMaxInput" class="partial-num-input" min="1" step="1">
+              </span>
+            </div>
             <div class="dual-range">
               <div class="dual-range-track"><div class="dual-range-fill" id="partialFillPage"></div></div>
               <input type="range" id="partialRngMinPage" class="dual-range-input dual-range-min" step="1">

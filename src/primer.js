@@ -68,7 +68,8 @@ const partialRngMaxPage = document.getElementById('partialRngMaxPage');
 const partialFillTime = document.getElementById('partialFillTime');
 const partialFillPage = document.getElementById('partialFillPage');
 const partialValTime = document.getElementById('partialValTime');
-const partialValPage = document.getElementById('partialValPage');
+const partialPageMinInput = document.getElementById('partialPageMinInput');
+const partialPageMaxInput = document.getElementById('partialPageMaxInput');
 const partialPreview = document.getElementById('partialPreview');
 const partialCount = document.getElementById('partialCount');
 const partialExtractBtn = document.getElementById('partialExtractBtn');
@@ -284,9 +285,14 @@ export function renderDictUI() {
 }
 
 // --- Extract ---
-export async function extractFromPaste(text, sourceName) {
+// `storeText` is the text kept in the session: normally the same as `text`,
+// but a partial extract passes the full source so the session retains the page
+// markers / timestamps and restore can re-detect the source. The word list is
+// always derived from `text` alone (only the extraction is partial).
+export async function extractFromPaste(text, sourceName, storeText) {
   text = text.replace(/^﻿/, '').trim();
   if (!text) { pasteStatus.textContent = 'No text to process.'; return; }
+  const sessionText = storeText ?? text;
 
   setOriginalText(text);
   pasteStatus.textContent = 'Tokenizing...';
@@ -330,14 +336,14 @@ export async function extractFromPaste(text, sourceName) {
     setVarMap(varMap);
 
     // Save session for sentence lookup (all extracted words, not just new)
-    saveSession(text, wordMap, varMap, sourceName).catch(() => {});
+    saveSession(sessionText, wordMap, varMap, sourceName).catch(() => {});
 
     setupListFilters();
     applyFilters();
     pasteStatus.textContent = `Extracted ${entries.length} unique words (${totalTokens} total).`;
     downloadBtn.classList.remove('hidden');
 
-    dbPut('lastText', text).catch(() => {});
+    dbPut('lastText', sessionText).catch(() => {});
     if (hasSavedBadge) hasSavedBadge.classList.remove('hidden');
   } catch (err) {
     console.error(err);
@@ -842,6 +848,10 @@ function openPartialModal() {
     const n = src.pages.length;
     setRange(partialRngMinPage, 1, n, 1);
     setRange(partialRngMaxPage, 1, n, n);
+    partialPageMinInput.min = 1;
+    partialPageMinInput.max = n;
+    partialPageMaxInput.min = 1;
+    partialPageMaxInput.max = n;
     partialFormatLabel.textContent = src.subtype === 'mokuro_text' ? 'Mokuro text' : 'Mokuro';
     renderPartialRuler(0);
   }
@@ -855,7 +865,31 @@ function closePartialModal() { partialModal.classList.add('hidden'); }
 
 function updatePartialLabels() {
   partialValTime.textContent = labelPair(partialRngMinTime, partialRngMaxTime, fmtTime);
-  partialValPage.textContent = labelPair(partialRngMinPage, partialRngMaxPage);
+  partialPageMinInput.value = partialRngMinPage.value;
+  partialPageMaxInput.value = partialRngMaxPage.value;
+}
+
+// Keep the page-number inputs and the page-range sliders in sync. `fromInput`
+// is the number input that triggered the change; its in-progress value is left
+// alone so typing isn't disrupted (the other side always gets the result).
+function syncPageNumbers(fromInput) {
+  const lo = Number(partialRngMinPage.min), hi = Number(partialRngMaxPage.max);
+  let a = Number(partialPageMinInput.value);
+  let b = Number(partialPageMaxInput.value);
+  if (!Number.isFinite(a)) a = lo;
+  if (!Number.isFinite(b)) b = hi;
+  a = Math.max(lo, Math.min(hi, a));
+  b = Math.max(lo, Math.min(hi, b));
+  if (a > b) {
+    if (fromInput === partialPageMinInput) b = a;
+    else a = b;
+  }
+  partialRngMinPage.value = a;
+  partialRngMaxPage.value = b;
+  if (fromInput !== partialPageMinInput) partialPageMinInput.value = a;
+  if (fromInput !== partialPageMaxInput) partialPageMaxInput.value = b;
+  fillPartial();
+  renderPartialPreview();
 }
 
 function fillPartial() {
@@ -872,6 +906,41 @@ function partialRange(loEl, hiEl) {
   return [Number(loEl.value), Number(hiEl.value)];
 }
 
+// A single selected unit (a subtitle cue or a mokuro page) rendered for the
+// preview box.
+function partialUnitEl(isSubs, u) {
+  if (isSubs) {
+    const d = document.createElement('div');
+    d.className = 'partial-cue';
+    const t = document.createElement('span');
+    t.className = 'partial-cue-time'; t.textContent = fmtTime(u.start);
+    const x = document.createElement('span');
+    x.className = 'partial-cue-text'; x.textContent = u.text;
+    d.appendChild(t); d.appendChild(x);
+    return d;
+  }
+  const d = document.createElement('div');
+  d.className = 'partial-page';
+  const h = document.createElement('div');
+  h.className = 'partial-page-head'; h.textContent = `Page ${u.n}`;
+  const b = document.createElement('pre');
+  b.className = 'partial-page-text'; b.textContent = u.text;
+  d.appendChild(h); d.appendChild(b);
+  return d;
+}
+
+// One labeled preview box for a cut boundary. A single-unit selection spans
+// the whole preview; otherwise the start and end get one box each.
+function previewBox(label, isSubs, u, single) {
+  const box = document.createElement('div');
+  box.className = 'partial-preview-box' + (single ? ' partial-preview-box--single' : '');
+  const head = document.createElement('div');
+  head.className = 'partial-preview-box-head'; head.textContent = label;
+  box.appendChild(head);
+  box.appendChild(partialUnitEl(isSubs, u));
+  return box;
+}
+
 // Preview shows what's at the cut boundaries (first + last selected unit) —
 // enough to verify where the cut lands without rendering the whole selection.
 function renderPartialPreview() {
@@ -884,40 +953,26 @@ function renderPartialPreview() {
 
   partialPreview.textContent = '';
   if (!units.length) {
-    partialPreview.textContent = 'Nothing in this range.';
+    const msg = document.createElement('div');
+    msg.className = 'partial-preview-box partial-preview-box--single';
+    msg.textContent = 'Nothing in this range.';
+    partialPreview.appendChild(msg);
     partialCount.textContent = '0 selected';
     return;
   }
 
   const frag = document.createDocumentFragment();
-  const boundary = units.length === 1 ? [units[0]] : [units[0], units[units.length - 1]];
-  for (const u of boundary) {
-    if (isSubs) {
-      const d = document.createElement('div');
-      d.className = 'partial-cue';
-      const t = document.createElement('span');
-      t.className = 'partial-cue-time'; t.textContent = fmtTime(u.start);
-      const x = document.createElement('span');
-      x.className = 'partial-cue-text'; x.textContent = u.text;
-      d.appendChild(t); d.appendChild(x);
-      frag.appendChild(d);
-    } else {
-      const d = document.createElement('div');
-      d.className = 'partial-page';
-      const h = document.createElement('div');
-      h.className = 'partial-page-head'; h.textContent = `Page ${u.n}`;
-      const b = document.createElement('pre');
-      b.className = 'partial-page-text'; b.textContent = u.text;
-      d.appendChild(h); d.appendChild(b);
-      frag.appendChild(d);
-    }
+  if (units.length === 1) {
+    frag.appendChild(previewBox('Selected', isSubs, units[0], true));
+  } else {
+    frag.appendChild(previewBox('Start', isSubs, units[0]));
+    frag.appendChild(previewBox('End', isSubs, units[units.length - 1]));
   }
-  if (units.length > 2) {
-    const note = document.createElement('div');
-    note.className = 'partial-note';
-    note.textContent = `… ${units.length - 2} more in between`;
-    frag.appendChild(note);
-  }
+  // Always render the note row (fixed height) so the popup size never jumps.
+  const note = document.createElement('div');
+  note.className = 'partial-note';
+  note.textContent = units.length > 2 ? `… ${units.length - 2} more in between` : '';
+  frag.appendChild(note);
   partialPreview.appendChild(frag);
 
   const chars = units.reduce((m, u) => m + u.text.length, 0);
@@ -949,10 +1004,20 @@ function wirePartial() {
   };
   wireRange(partialRngMinTime, partialRngMaxTime);
   wireRange(partialRngMinPage, partialRngMaxPage);
+  partialPageMinInput.addEventListener('input', () => syncPageNumbers(partialPageMinInput));
+  partialPageMaxInput.addEventListener('input', () => syncPageNumbers(partialPageMaxInput));
+  // On commit (blur / Enter) snap both inputs back to the clamped slider values,
+  // e.g. a typed "200" beyond the last page settles on the max.
+  const snapPageInputs = () => { updatePartialLabels(); fillPartial(); renderPartialPreview(); };
+  partialPageMinInput.addEventListener('change', snapPageInputs);
+  partialPageMaxInput.addEventListener('change', snapPageInputs);
   partialExtractBtn.addEventListener('click', () => {
     const text = selectedPartialText();
     if (!text.trim()) { partialCount.textContent = 'Nothing selected in this range.'; return; }
-    extractFromPaste(text, _partialSourceName);
+    // Keep the whole source (page markers intact) in the session so restoring
+    // re-detects the source and Partial stays available; only the extraction
+    // below is scoped to the selected range.
+    extractFromPaste(text, _partialSourceName, pasteTextarea.value);
     partialModal.classList.add('hidden');
   });
 }
