@@ -5,7 +5,9 @@ import {
   setSkipSessionSave, setVarMap,
   dbPut, dbGet, addKnownWord, removeKnownWord, getTokenizer,
   CONTENT_POS, isHiraganaOnly, isKatakanaOnly, isKanaOnly, downloadTextFile,
-  mergeSplitNouns, getNames, saveSession, findSentences, findSentenceContext
+  mergeSplitNouns, getNames, saveSession, findSentences, findSentenceContext,
+  splitSentences, buildSentenceIndex, setCurrentSentenceIndex,
+  findSentencesInText, findSentencesFromSessions
 } from './state.js';
 import { getDictRank, getDictMap, getDictName } from './dict.js';
 import { createVirtualList } from './virtual.js';
@@ -335,8 +337,17 @@ export async function extractFromPaste(text, sourceName, storeText) {
     setCurrentFreq(entries);
     setVarMap(varMap);
 
-    // Save session for sentence lookup (all extracted words, not just new)
-    saveSession(sessionText, wordMap, varMap, sourceName).catch(() => {});
+    // Index the text we just extracted so the More popup can show its
+    // sentences synchronously, without a DB read or a fresh scan.
+    const curSents = splitSentences(text);
+    const curIndex = buildSentenceIndex(curSents, wordMap, varMap);
+    setCurrentSentenceIndex(curSents, curIndex);
+
+    // Save session for sentence lookup (all extracted words, not just new).
+    // A partial extract stores the full source, so only hand over the index
+    // when the stored text is the one we just indexed.
+    const prebuilt = sessionText === text ? { sents: curSents, wordIndices: curIndex } : null;
+    saveSession(sessionText, wordMap, varMap, sourceName, prebuilt).catch(() => {});
 
     setupListFilters();
     applyFilters();
@@ -495,8 +506,26 @@ function formatRelTime(ts) {
 // cache (text -> content words) so the "new words per sentence" filter doesn't
 // re-tokenize on every change.
 let _sentData = [];          // { text, ts, len }
+let _sentSeen = new Set();   // sentence texts already in _sentData
+let _sentGen = 0;            // bumps per open, so a stale stream can't fill a newer one
 let _sentWords = new Map();  // text -> [content words]
 let _sentCounting = false;
+
+// Merge a batch of {text, ts} into _sentData, skipping texts already listed.
+function addSentenceBatch(batch) {
+  let added = false;
+  for (const s of batch) {
+    if (_sentSeen.has(s.text)) continue;
+    _sentSeen.add(s.text);
+    _sentData.push({ text: s.text, ts: s.ts, len: [...s.text].length });
+    added = true;
+  }
+  return added;
+}
+
+function showSentences(msg) {
+  contextSentences.innerHTML = `<p class="no-context-msg">${msg}</p>`;
+}
 
 function sentenceNewCount(text) {
   const words = _sentWords.get(text);
@@ -650,8 +679,9 @@ async function countSentenceWords(texts) {
 
 export async function openContextModal(word) {
   contextWordTitle.textContent = word;
-  contextSentences.innerHTML = '<p class="no-context-msg">Loading...</p>';
+  showSentences('Loading...');
   showMoreList();
+  moreFiltersBtn.classList.add('hidden'); // revealed once there is something to filter
 
   // Show occurrences (left) and rank (right)
   const freq = getCurrentFreq().find(e => e.word === word);
@@ -659,29 +689,65 @@ export async function openContextModal(word) {
   const rankVal = getDictRank(word);
   contextWordRank.textContent = rankVal ? `#${rankVal}` : '';
 
-  const sentences = await findSentences(word);
-  if (!sentences.length) {
-    contextSentences.innerHTML = '<p class="no-context-msg">No sentences found containing this word.</p>';
-    moreFiltersBtn.classList.add('hidden');
-    contextModal.classList.remove('hidden');
+  contextModal.classList.remove('hidden');
+
+  const gen = ++_sentGen;
+  _sentData = [];
+  _sentSeen = new Set();
+  _sentCounting = true; // per-sentence counts appear once the tokenize pass lands
+
+  // 1. This text's sentences come from the index built at extract time, so they
+  //    render on the same tick as the click.
+  if (addSentenceBatch(findSentencesInText(word))) {
+    moreFiltersBtn.classList.remove('hidden');
+    setupMoreFilters();
+    applyMoreFilters();
+  } else {
+    showSentences('Searching earlier sessions…');
+  }
+
+  // 2. Earlier sessions, newest first, one batch at a time. The list isn't
+  //    virtualized and every render rebuilds it from scratch, so coalesce the
+  //    redraws rather than drawing per session. Batches land in _sentData as
+  //    they arrive; only the redraw is throttled. The DB reads between batches
+  //    yield to the event loop, so these timers do fire mid-stream.
+  let renderTimer = null;
+  await findSentencesFromSessions(word, batch => {
+    if (gen !== _sentGen) return;
+    if (!addSentenceBatch(batch)) return;
+    moreFiltersBtn.classList.remove('hidden');
+    if (renderTimer) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      if (gen !== _sentGen) return;
+      applyMoreFilters();
+    }, 50);
+  });
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+  if (gen !== _sentGen) return;
+
+  if (!_sentData.length) {
+    showSentences('No sentences found containing this word.');
+    _sentCounting = false;
     return;
   }
 
-  moreFiltersBtn.classList.remove('hidden');
-  _sentData = sentences.map(s => ({ text: s.text, ts: s.ts, len: [...s.text].length }));
+  // Slider ranges now cover every match, not just this text's.
   setupMoreFilters();
   applyMoreFilters();
 
-  // Tokenize every matched sentence in the background to derive the
+  // Tokenize the matched sentences in the background to derive the
   // "new words per sentence" counts, then tighten filters once ready.
-  _sentCounting = true;
   countSentenceWords(_sentData.map(s => s.text)).then(() => {
+    if (gen !== _sentGen) return;
     _sentCounting = false;
     setupMoreFilters();
     applyMoreFilters();
-  }).catch(() => { _sentCounting = false; applyMoreFilters(); });
-
-  contextModal.classList.remove('hidden');
+  }).catch(() => {
+    if (gen !== _sentGen) return;
+    _sentCounting = false;
+    applyMoreFilters();
+  });
 }
 
 async function openMoreContext(text) {

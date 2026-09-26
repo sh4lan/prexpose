@@ -313,14 +313,8 @@ export function splitSentences(text) {
   return text.split(/。|！|？|\.\s|\!\s|\?\s|\n/).map(s => s.trim()).filter(s => s.length > 0).map(s => s.replace(/[…。\.]+$/, ''));
 }
 
-export async function saveSession(text, wordMap, varMap, sourceName) {
-  if (_skipSessionSave) { _skipSessionSave = false; return null; }
-  const now = Date.now();
-  const sessionId = now.toString(36) + Math.random().toString(36).slice(2, 4);
-
-  const sents = splitSentences(text);
-  const charCount = sents.join('').length;
-
+// Word -> sentence indices for one text. The indices point into `sents`.
+export function buildSentenceIndex(sents, wordMap, varMap) {
   const wordIndices = {};
   for (const word of wordMap.keys()) {
     const indices = [];
@@ -336,6 +330,19 @@ export async function saveSession(text, wordMap, varMap, sourceName) {
     }
     if (indices.length) wordIndices[word] = indices;
   }
+  return wordIndices;
+}
+
+// `prebuilt` is an index the caller already built for this same text
+// ({ sents, wordIndices }) — extracting passes it so the text isn't scanned twice.
+export async function saveSession(text, wordMap, varMap, sourceName, prebuilt) {
+  if (_skipSessionSave) { _skipSessionSave = false; return null; }
+  const now = Date.now();
+  const sessionId = now.toString(36) + Math.random().toString(36).slice(2, 4);
+
+  const sents = prebuilt ? prebuilt.sents : splitSentences(text);
+  const charCount = sents.join('').length;
+  const wordIndices = prebuilt ? prebuilt.wordIndices : buildSentenceIndex(sents, wordMap, varMap);
 
   const data = { sentences: sents, wordIndices, ts: now, charCount, words: [...wordMap.keys()], source: sourceName || null };
   await dbPut('session:' + sessionId, data);
@@ -344,6 +351,48 @@ export async function saveSession(text, wordMap, varMap, sourceName) {
   list.push(sessionId);
   await dbPut('sessionList', list);
   return sessionId;
+}
+
+// --- Current text's sentence index ---
+// Kept in memory so the More popup can show this text's sentences without
+// touching IndexedDB or re-scanning the text. Set alongside setOriginalText.
+let _currentSents = null;
+let _currentWordIndices = null;
+
+export function setCurrentSentenceIndex(sents, wordIndices) {
+  _currentSents = sents;
+  _currentWordIndices = wordIndices;
+}
+
+// Sentences of the current text containing `word`. Synchronous: a map lookup
+// plus a walk of the matching indices.
+export function findSentencesInText(word) {
+  const indices = _currentWordIndices && _currentSents && _currentWordIndices[word];
+  if (!indices) return [];
+  const now = Date.now();
+  const out = [];
+  for (const i of indices) {
+    if (i < _currentSents.length) out.push({ text: _currentSents[i], ts: now });
+  }
+  return out;
+}
+
+// Matches from saved sessions, newest session first, one batch per session, so
+// the caller can render the current text at once and fill in history behind it.
+// `onBatch` gets [{text, ts}] and is awaited, so a slow render throttles the walk.
+export async function findSentencesFromSessions(word, onBatch) {
+  const list = await dbGet('sessionList') || [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const data = await dbGet('session:' + list[i]);
+    if (!data || !data.wordIndices) continue;
+    const indices = data.wordIndices[word];
+    if (!indices) continue;
+    const batch = [];
+    for (const idx of indices) {
+      if (idx < data.sentences.length) batch.push({ text: data.sentences[idx], ts: data.ts });
+    }
+    if (batch.length) await onBatch(batch);
+  }
 }
 
 export async function findSentences(word) {
@@ -363,20 +412,10 @@ export async function findSentences(word) {
     }
   }
 
-  // Also add from current text in memory
-  if (_originalText) {
-    const now = Date.now();
-    const currentSents = splitSentences(_originalText);
-    const forms = [word];
-    const vm = _varMap;
-    if (vm && vm.has(word)) for (const sf of vm.get(word)) forms.push(sf);
-    for (const s of currentSents) {
-      let matched = false;
-      for (const f of forms) { if (s.includes(f)) { matched = true; break; } }
-      if (!matched) continue;
-      const existing = results.get(s);
-      if (!existing || now > existing.ts) results.set(s, { text: s, ts: now });
-    }
+  // Also add from the current text, via the index built at extract time
+  for (const s of findSentencesInText(word)) {
+    const existing = results.get(s.text);
+    if (!existing || s.ts > existing.ts) results.set(s.text, s);
   }
 
   return [...results.values()].sort((a, b) => b.ts - a.ts);
